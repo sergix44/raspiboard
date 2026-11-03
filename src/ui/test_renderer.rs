@@ -67,3 +67,23 @@ impl iced::advanced::text::Renderer for TestRenderer {
     ) {
     }
 }
+
+impl image::Renderer for TestRenderer {
+    type Handle = image::Handle;
+
+    fn load_image(&self, _handle: &Self::Handle) -> Result<image::Allocation, image::Error> {
+        Err(image::Error::Unsupported)
+    }
+
+    fn measure_image(&self, _handle: &Self::Handle) -> Option<iced::Size<u32>> {
+        Some(iced::Size::new(30, 30))
+    }
+
+    fn draw_image(
+        &mut self,
+        _image: image::Image<Self::Handle>,
+        _bounds: Rectangle,
+        _clip_bounds: Rectangle,
+    ) {
+    }
+}

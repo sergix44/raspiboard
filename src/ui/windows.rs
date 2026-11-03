@@ -27,6 +27,17 @@ pub(super) fn window_settings() -> window::Settings {
     }
 }
 
+pub(super) fn main_window_settings() -> window::Settings {
+    window::Settings {
+        size: Size::new(1100.0, 680.0),
+        min_size: Some(Size::new(1000.0, 360.0)),
+        decorations: false,
+        transparent: true,
+        exit_on_close_request: false,
+        ..window_settings()
+    }
+}
+
 impl Soundboard {
     pub fn start() -> (Self, Task<Message>) {
         let mut board = Self::boot();
@@ -38,15 +49,28 @@ impl Soundboard {
         if let Some(id) = self.main_window {
             return window::minimize(id, false).chain(window::gain_focus(id));
         }
-        let (id, open) = window::open(window::Settings {
-            size: Size::new(1100.0, 680.0),
-            min_size: Some(Size::new(1000.0, 360.0)),
-            exit_on_close_request: false,
-            ..window_settings()
-        });
+        let (id, open) = window::open(main_window_settings());
         self.main_window = Some(id);
         self.main_hidden = false;
+        self.main_maximized = false;
         open.discard()
+    }
+
+    pub(super) fn main_window_action(&mut self, message: Message) -> Task<Message> {
+        let Some(id) = self.main_window else {
+            return Task::none();
+        };
+        match message {
+            Message::DragMainWindow => window::drag(id),
+            Message::ResizeMainWindow(direction) => window::drag_resize(id, direction),
+            Message::MinimizeMainWindow => window::minimize(id, true),
+            Message::ToggleMaximize => window::toggle_maximize(id).chain(
+                window::is_maximized(id)
+                    .map(move |maximized| Message::MainWindowMaximized(id, maximized)),
+            ),
+            Message::CloseMainWindow => self.close_requested(id),
+            _ => Task::none(),
+        }
     }
 
     pub fn title(&self, id: window::Id) -> String {
@@ -64,7 +88,7 @@ impl Soundboard {
             return window::minimize(id, false).chain(window::gain_focus(id));
         }
         let (id, open) = window::open(window::Settings {
-            size: Size::new(440.0, 420.0),
+            size: Size::new(580.0, 600.0),
             min_size: Some(Size::new(360.0, 260.0)),
             position: window::Position::Centered,
             ..window_settings()

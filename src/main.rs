@@ -15,6 +15,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .font(ui::icons::FONT_BYTES)
         .font(iced_aw::ICED_AW_FONT_BYTES)
         .theme(|board: &Soundboard, _window| board.theme())
+        .style(
+            |_board: &Soundboard, theme: &iced::Theme| iced::theme::Style {
+                background_color: iced::Color::TRANSPARENT,
+                text_color: theme.palette().text,
+            },
+        )
         .subscription(Soundboard::subscription)
         .run()?;
     Ok(())

@@ -9,6 +9,8 @@ use iced::{
 };
 use raspiboard::theme::tokens;
 
+const CIRCULAR_LIFT: f32 = 8.0;
+
 #[derive(Clone, Copy)]
 pub(super) enum Tone {
     Accent,
@@ -56,7 +58,24 @@ pub(super) fn raised<'a, Message: Clone + 'a, Renderer: renderer::Renderer + 'a>
     tone: Tone,
     overlap: bool,
 ) -> Element<'a, Message, Theme, Renderer> {
-    pad(content, enabled, playing, tone, overlap, false)
+    pad(content, enabled, playing, tone, overlap, false, false)
+}
+
+pub(super) fn circular<'a, Message: Clone + 'a, Renderer: renderer::Renderer + 'a>(
+    content: button::Button<'a, Message, Theme, Renderer>,
+    diameter: f32,
+    tone: Tone,
+) -> Element<'a, Message, Theme, Renderer> {
+    // Keep the raised face's full animation inside the button's input bounds.
+    pad(
+        content.width(diameter).height(diameter + CIRCULAR_LIFT),
+        true,
+        false,
+        tone,
+        false,
+        false,
+        true,
+    )
 }
 
 pub(super) fn blinking<'a, Message: Clone + 'a, Renderer: renderer::Renderer + 'a>(
@@ -65,7 +84,15 @@ pub(super) fn blinking<'a, Message: Clone + 'a, Renderer: renderer::Renderer + '
     active: bool,
     color: Color,
 ) -> Element<'a, Message, Theme, Renderer> {
-    pad(content, enabled, active, Tone::Custom(color), false, true)
+    pad(
+        content,
+        enabled,
+        active,
+        Tone::Custom(color),
+        false,
+        true,
+        false,
+    )
 }
 
 fn pad<'a, Message: Clone + 'a, Renderer: renderer::Renderer + 'a>(
@@ -75,6 +102,7 @@ fn pad<'a, Message: Clone + 'a, Renderer: renderer::Renderer + 'a>(
     tone: Tone,
     overlap: bool,
     blink: bool,
+    circular: bool,
 ) -> Element<'a, Message, Theme, Renderer> {
     Element::new(AnimatedPad {
         content: content
@@ -85,6 +113,7 @@ fn pad<'a, Message: Clone + 'a, Renderer: renderer::Renderer + 'a>(
         tone,
         overlap,
         blink,
+        circular,
     })
 }
 
@@ -187,6 +216,7 @@ struct AnimatedPad<'a, Message, Renderer> {
     tone: Tone,
     overlap: bool,
     blink: bool,
+    circular: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -415,7 +445,20 @@ impl<Message, Renderer: renderer::Renderer> Widget<Message, Theme, Renderer>
         let state = tree.state.downcast_ref::<State>();
         let tokens = tokens(theme);
         let layers = state.layers();
-        let bounds = layout.bounds();
+        let bounds = if self.circular {
+            Rectangle {
+                y: layout.bounds().y + CIRCULAR_LIFT,
+                height: layout.bounds().height - CIRCULAR_LIFT,
+                ..layout.bounds()
+            }
+        } else {
+            layout.bounds()
+        };
+        let radius = if self.circular {
+            bounds.width.min(bounds.height) / 2.0
+        } else {
+            tokens.radius
+        };
         let blink = state.blink_started.map_or(1.0, |start| {
             blink_intensity(state.now.saturating_duration_since(start))
         });
@@ -438,14 +481,14 @@ impl<Message, Renderer: renderer::Renderer> Widget<Message, Theme, Renderer>
                     border: Border {
                         color: light.scale_alpha(0.7),
                         width: 1.0,
-                        radius: (tokens.radius + 1.0).into(),
+                        radius: (radius + 1.0).into(),
                     },
                     shadow: Shadow {
                         color: light.scale_alpha(0.7),
                         blur_radius: 14.0,
                         ..Shadow::default()
                     },
-                    ..quad(backlight, tokens.radius + 1.0)
+                    ..quad(backlight, radius + 1.0)
                 },
                 light.scale_alpha(0.18),
             );
@@ -458,7 +501,7 @@ impl<Message, Renderer: renderer::Renderer> Widget<Message, Theme, Renderer>
                         blur_radius: 2.0,
                         ..Shadow::default()
                     },
-                    ..quad(bounds + Vector::new(0.0, layers.shadow), tokens.radius)
+                    ..quad(bounds + Vector::new(0.0, layers.shadow), radius)
                 },
                 Color::BLACK.scale_alpha(0.25),
             );
@@ -473,7 +516,7 @@ impl<Message, Renderer: renderer::Renderer> Widget<Message, Theme, Renderer>
         } else {
             iced::Background::Color(face)
         };
-        renderer.fill_quad(quad(bounds, tokens.radius), edge);
+        renderer.fill_quad(quad(bounds, radius), edge);
         let surface: iced::Background = if matches!(self.tone, Tone::Custom(_)) {
             face.into()
         } else if tokens.metallic {
@@ -495,14 +538,20 @@ impl<Message, Renderer: renderer::Renderer> Widget<Message, Theme, Renderer>
                 border: Border {
                     color: light.unwrap_or(tokens.border),
                     width: 1.0,
-                    radius: tokens.radius.into(),
+                    radius: radius.into(),
                 },
-                ..quad(bounds + Vector::new(0.0, state.offset()), tokens.radius)
+                ..quad(bounds + Vector::new(0.0, state.offset()), radius)
             },
             surface,
         );
         // Keep input bounds fixed while the pad's surface moves.
-        renderer.with_translation(Vector::new(0.0, state.offset()), |renderer| {
+        let content_offset = state.offset()
+            + if self.circular {
+                CIRCULAR_LIFT / 2.0
+            } else {
+                0.0
+            };
+        renderer.with_translation(Vector::new(0.0, content_offset), |renderer| {
             self.content.as_widget().draw(
                 &tree.children[0],
                 renderer,

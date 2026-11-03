@@ -2,6 +2,28 @@
 
 [Back to the README](../README.md)
 
+## Window controls and search
+
+The main window has a title bar with the Raspiboard icon and version on the left,
+sound search in the center, and circular Minimize, Maximize/Restore, and Close
+buttons on the right. The header blends into the board background and the
+window's border follows the selected theme's panel corners.
+Drag the title or unused header space to move the window; double-click it to
+maximize or restore. Drag an edge or corner to resize.
+
+Type in **Search…** to filter pads by their displayed name. Matching ignores
+letter case and spaces at the beginning or end of the query. Custom names take
+precedence over filenames. Click the search field's **×** to show the whole board
+again. If nothing matches, the grid shows **No sounds match your search**.
+
+Filtering leaves playback, recording, routing, and global hotkeys running. Pads
+keep their saved assignments and order; you can reorder visible matches while
+hidden pads keep their relative order. Search starts empty when the app launches.
+Settings and Sound options open in separate windows with system title bars.
+Settings opens at 580×600. Scroll below Recordings to find **Credits**, including
+the app version, creator, license, and toolkit/font acknowledgments. The Default
+theme and Close buttons stay visible while scrolling.
+
 ## Build your board
 
 Right-click empty grid space and choose **Add Sound** to create a pad from an

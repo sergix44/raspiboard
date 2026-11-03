@@ -2,9 +2,9 @@ use super::{Message, sound_pad, volume_slider};
 use iced::widget::{
     button, checkbox, column, container, pick_list, row, scrollable, slider, space, text,
 };
-use iced::{Element, Fill};
+use iced::{Border, Element, Fill, Theme};
 use raspiboard::storage::{MAX_SOUND_BUTTON_SCALE, MIN_SOUND_BUTTON_SCALE};
-use raspiboard::theme::ThemeChoice;
+use raspiboard::theme::{ThemeChoice, tokens};
 
 pub(super) fn view(
     theme: ThemeChoice,
@@ -58,6 +58,7 @@ pub(super) fn view(
             .size(13)
             .style(text::secondary),
         super::recording::settings_view(recordings, directory, choosing_directory),
+        credits(),
     ]
     .spacing(20);
     column![
@@ -105,5 +106,40 @@ pub(super) fn view(
     ]
     .width(Fill)
     .height(Fill)
+    .into()
+}
+
+fn credits() -> Element<'static, Message> {
+    container(
+        column![
+            text("Credits").size(16),
+            text(concat!("Raspiboard v", env!("CARGO_PKG_VERSION"))).size(14),
+            text("Created by Sergio Brighenti").size(13),
+            text(concat!("Licensed under ", env!("CARGO_PKG_LICENSE")))
+                .size(12)
+                .style(text::secondary),
+            text("Built with Rust, Iced, and PipeWire.")
+                .size(12)
+                .style(text::secondary),
+            text("Monaspace Krypton typeface · Lucide icons")
+                .size(12)
+                .style(text::secondary),
+        ]
+        .spacing(8),
+    )
+    .padding(16)
+    .width(Fill)
+    .style(|theme: &Theme| {
+        let colors = tokens(theme);
+        container::Style {
+            background: Some(colors.surface.into()),
+            border: Border {
+                color: colors.border,
+                width: 1.0,
+                radius: colors.radius.into(),
+            },
+            ..Default::default()
+        }
+    })
     .into()
 }

@@ -137,6 +137,11 @@ settings/button round trips, grid ordering, malformed-file preservation, atomic
 writes, shutdown flushing, and independent save-error recovery. They also check
 that restoring saved data does not start playback or select a recording target.
 These tests do not connect to a live audio server or open a window.
+Title bar tests exercise native widget event handling without opening a window:
+search and control click capture, double-click maximize, all eight resize
+directions, maximized resize suppression, and stale window-state callbacks.
+Search tests cover label matching, clearing/no matches, unchanged playback and
+hotkeys, transient-menu cancellation, and reordering around hidden pads.
 An ignored headless timing test accepts a local JSON array containing `path`,
 `extension`, `start_ms` and `end_ms` entries. Keep that fixture under test-results
 and run `RASPIBOARD_PROFILE_INPUT=test-results/recording/performance-input.json
@@ -181,3 +186,22 @@ The automated suite covers enabled/disabled close behavior, missing tray support
 restoring the board, tray host loss, explicit Quit, and preference persistence.
 Live tray rendering and desktop integration are covered in the manual acceptance
 checks.
+
+## Main window header
+
+`src/ui/windows.rs` opens the main window without system decorations; Settings
+and Sound options retain them. `src/ui/title_bar.rs` composes the branded header,
+centered search input, window buttons, and resize border from Iced widgets.
+Iced's image feature displays the embedded PNG and its native window tasks
+perform move, resize, minimize, and maximize. Resize events query confirmed
+maximize state; replies are accepted only for the current main window ID.
+The main native window supports transparency, with a transparent application
+clear color behind an opaque rounded frame. Auxiliary views paint their own
+opaque background. Frame radius and border come from the theme's panel tokens;
+maximized windows use square corners. Circular header controls reuse the raised
+pad renderer's bevel, shadow and animation with a circular radius.
+
+`src/ui/search.rs` filters the rendered grid using temporary query state and
+each pad's displayed label. Playback, hotkeys, persistence, and reordering still
+use the complete pad collection. Header Close enters the existing tray/quit
+path rather than closing the native window directly.

@@ -44,7 +44,7 @@ opt-level = 3
 opt-level = 3
 
 [dependencies]
-iced = { version = "0.14.0", features = ["advanced", "canvas"] }
+iced = { version = "0.14.0", features = ["advanced", "canvas", "image-without-codecs"] }
 iced_aw = { version = "0.14.1", path = "vendor/iced_aw", default-features = false, features = ["color_picker", "number_input"] }
 async-channel = "2.5"
 rfd = "0.17.2"

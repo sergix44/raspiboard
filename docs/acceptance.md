@@ -68,7 +68,10 @@ Wayland and X11 where available. Build and check packages as described in
 
 ## Layout and sound assignment
 
-1. The main window title shows `Raspiboard v<version>`, matching the package
+1. The main window's custom title bar shows the app icon and
+   `Raspiboard v<version>` at the left, **Search…** centered in the window,
+   and Minimize, Maximize/Restore and Close at the right, with no second system
+   title bar. The version matches the package
    version in `Cargo.toml`. On first launch, expect one empty sound button at the
    top left of the grid area; later launches restore the saved grid. Play and Stop icons,
    Remote Volume and Local Volume with a chain toggle, an application dropdown,
@@ -126,6 +129,45 @@ Wayland and X11 where available. Build and check packages as described in
     first install the [desktop launcher](development.md#desktop-launcher-and-application-icon)
     and check the application menu and dock. Both windows should group under
     Raspiboard. Launch from another working directory: the icon still loads.
+
+## Custom title bar and search
+
+1. Run `cargo run --locked`. In both Deck and Console, check the icon, version,
+   search glyph and three circular window controls: yellow Minimize, green
+   Maximize/Restore, and red Close. Their bevel, shadow, hover and press motion
+   match the existing raised buttons. The header blends into the main background,
+   with a compact gap above the first pads. The window has the same corner radius
+   and border as its panels, with transparent outside corners. Maximizing fills
+   the screen with square outside corners. Settings and Sound options keep their
+   opaque backgrounds and system decorations. Resize to the minimum width: search
+   remains centered, the title stays readable and controls do not overlap.
+2. Drag the title/icon or unused header space: the window moves. Double-click
+   it to maximize and again to restore. Repeat with the Maximize/Restore button
+   and desktop snapping: its icon follows the actual state. Drag each of the
+   four edges and four corners to resize; check the matching resize cursor and
+   minimum dimensions. Maximized windows do not expose active resize handles.
+3. Click and select text in Search, including double-clicking a word. Click its
+   border and clear button. None of those moves or maximizes the window. Click
+   each window button, drag outside it and release: no action fires. Minimize
+   hides the window; restore it through the desktop/task switcher.
+4. Add pads named `Brass Horn`, `Air Horn`, and `Door Bell`. Search `  hOrN  `:
+   only the two horns remain in their existing order. Search `bell`: only the
+   bell remains. A custom label matches instead of the underlying filename.
+   Search an absent name: expect **No sounds match your search**. Click **×**
+   and expect the full board. Restart: search is empty.
+5. Play a pad, then filter it out. Playback and bottom controls continue working;
+   its global hotkey remains usable. Check recording and passthrough continue
+   during filtering. Reorder visible matches, then clear search: all hidden pads
+   remain, with their relative order preserved. Restart and confirm saved order.
+6. Right-click pads and empty grid space with a query present. Menus appear at
+   the pointer, including near the bottom/right edges. Changing the query closes
+   an open menu or cancels a pending reorder. Settings and Sound options retain
+   their system title bars.
+7. Close the main window using the custom **×** with **Minimize to tray on close**
+   disabled: the app exits. Enable the setting and repeat with a tray available:
+   it keeps running in the tray. Choose **Show Raspiboard** and check search,
+   window controls, and resize handles work in the restored window. Explicit
+   tray Quit still exits and finishes any active recording.
 
 ## Application audio passthrough
 
@@ -275,9 +317,13 @@ Wayland and X11 where available. Build and check packages as described in
 
 ## Settings and themes
 
-1. Open Settings. It starts at 440×420 with all controls visible and no scrollbar
-   in either theme. Settings appears only in the native title bar; the content
-   starts with Theme. Expand Theme. Only Deck and Console appear. Deck is the
+1. Open Settings. It starts at 580×600 in either theme. Scroll to the bottom:
+   a Credits panel follows Recordings and shows the package version, Sergio
+   Brighenti, GPL-3.0-only license, Rust/Iced/PipeWire, Monaspace Krypton and Lucide.
+   The panel uses the theme's surface, border and corner radius. Default theme
+   and Close remain visible below the scrollable content. Settings appears only
+   in the native title bar; the content starts with Theme. Expand Theme.
+   Only Deck and Console appear. Deck is the
    initial default: near-black panels, neutral graphite pads and cyan sliders.
    Choose Console: all windows change immediately to charcoal and stronger bevels,
    and Settings stays open. Built-in Iced themes are absent.
@@ -293,9 +339,9 @@ Wayland and X11 where available. Build and check packages as described in
 5. With Console selected, click Default theme. The selector changes to Deck and
    the button becomes disabled. The desktop preference and ICED_THEME environment
    variable do not replace the app's chosen theme.
-6. Resize Settings to its minimum 360×260 size. Theme and Sound button size
-   remain reachable by scrolling; Default theme and Close stay visible. Open the
-   dropdown and select Console without
+6. Resize Settings to its minimum 360×260 size. Theme, Sound button size,
+   and Credits remain reachable by scrolling; Default theme and Close stay visible.
+   Open the dropdown and select Console without
    resizing. The main window keeps its own 1000×360 minimum size.
    Its scrollbar sits at the window's right edge, outside the content margins,
    and does not cover the dropdown arrow, text, or slider.

@@ -24,10 +24,12 @@ mod passthrough;
 mod persistence;
 mod recording;
 mod reorder;
+mod search;
 mod settings;
 mod sound_pad;
 #[cfg(test)]
 mod test_renderer;
+mod title_bar;
 mod tray;
 mod volume_slider;
 mod waveform;
@@ -39,6 +41,7 @@ pub struct Soundboard {
     theme: ThemeChoice,
     main_window: Option<window::Id>,
     main_hidden: bool,
+    main_maximized: bool,
     tray_available: bool,
     minimize_to_tray: bool,
     recordings: raspiboard::recording::RecordingSettings,
@@ -57,6 +60,7 @@ pub struct Soundboard {
     controller: Option<Controller>,
     audio: Snapshot,
     buttons: Vec<Button>,
+    search: String,
     default_button_count: usize,
     default_category_id: String,
     button_categories: std::collections::HashMap<String, String>,
@@ -74,6 +78,15 @@ pub struct Soundboard {
 
 #[derive(Debug, Clone)]
 pub enum Message {
+    SearchChanged(String),
+    FocusSearch,
+    DragMainWindow,
+    ResizeMainWindow(window::Direction),
+    MinimizeMainWindow,
+    ToggleMaximize,
+    CloseMainWindow,
+    MainWindowResized(window::Id),
+    MainWindowMaximized(window::Id, bool),
     OpenSettings,
     CloseSettings,
     WindowClosed(window::Id),
@@ -162,6 +175,7 @@ impl Soundboard {
 
     pub fn subscription(&self) -> Subscription<Message> {
         Subscription::batch([
+            window::resize_events().map(|(id, _size)| Message::MainWindowResized(id)),
             Subscription::run(audio::events).map(Message::Audio),
             self.hotkey_subscription(),
             Subscription::run(tray::events).map(Message::Tray),
@@ -250,6 +264,29 @@ impl Soundboard {
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            Message::FocusSearch => return iced::widget::operation::focus("sound-search"),
+            Message::DragMainWindow
+            | Message::ResizeMainWindow(_)
+            | Message::MinimizeMainWindow
+            | Message::ToggleMaximize
+            | Message::CloseMainWindow => return self.main_window_action(message),
+            Message::MainWindowResized(id) => {
+                if self.main_window == Some(id) {
+                    return window::is_maximized(id)
+                        .map(move |maximized| Message::MainWindowMaximized(id, maximized));
+                }
+            }
+            Message::MainWindowMaximized(id, maximized) => {
+                if self.main_window == Some(id) {
+                    self.main_maximized = maximized;
+                }
+            }
+            Message::SearchChanged(query) => {
+                self.search = query;
+                self.reorder = None;
+                self.grid_menu = None;
+                self.button_menu = None;
+            }
             Message::ToggleRecording => {
                 if let Some(command) = self.recording_command() {
                     self.send(command);
@@ -548,37 +585,53 @@ impl Soundboard {
     }
 
     pub fn view(&self, window: window::Id) -> Element<'_, Message> {
-        if self.settings_window == Some(window) {
-            return settings::view(
+        let content = if self.settings_window == Some(window) {
+            settings::view(
                 self.theme,
                 self.sound_button_scale,
                 self.minimize_to_tray,
                 &self.recordings,
                 self.recording_directory(),
                 self.choosing_recording_directory,
-            );
-        }
-        if self.options_window == Some(window) {
-            return self.options_view();
-        }
-        self.soundboard_view()
+            )
+        } else if self.options_window == Some(window) {
+            self.options_view()
+        } else {
+            return self.soundboard_view();
+        };
+        container(content)
+            .width(Fill)
+            .height(Fill)
+            .style(|theme: &Theme| container::Style {
+                background: Some(raspiboard::theme::tokens(theme).background.into()),
+                ..Default::default()
+            })
+            .into()
     }
 
     fn soundboard_view(&self) -> Element<'_, Message> {
-        let sounds = scrollable(
-            container(
-                grid(self.buttons.iter().map(|button| self.sound_button(button)))
-                    .fluid(self.button_dimensions().width)
-                    .height(iced::Shrink)
-                    .spacing(16),
-            )
-            .padding(iced::Padding {
-                top: CONTENT_PADDING + 8.0,
-                right: CONTENT_PADDING + 8.0,
-                bottom: 8.0,
-                left: CONTENT_PADDING + 8.0,
-            }),
-        )
+        let pads: Element<'_, Message> =
+            if self.visible_buttons().next().is_none() && !self.search.trim().is_empty() {
+                container(text("No sounds match your search").style(text::secondary))
+                    .center_x(Fill)
+                    .padding(32)
+                    .into()
+            } else {
+                grid(
+                    self.visible_buttons()
+                        .map(|button| self.sound_button(button)),
+                )
+                .fluid(self.button_dimensions().width)
+                .height(iced::Shrink)
+                .spacing(16)
+                .into()
+            };
+        let sounds = scrollable(container(pads).padding(iced::Padding {
+            top: 16.0,
+            right: CONTENT_PADDING + 8.0,
+            bottom: 8.0,
+            left: CONTENT_PADDING + 8.0,
+        }))
         .spacing(0)
         .width(Fill)
         .height(Fill);
@@ -669,7 +722,14 @@ impl Soundboard {
             left: CONTENT_PADDING,
         });
         let content = content.push(footer).width(Fill).height(Fill);
-        grid_menu::view(content.into(), self.grid_menu, self.button_menu.as_deref())
+        let body = grid_menu::view(content.into(), self.grid_menu, self.button_menu.as_deref());
+        title_bar::frame(
+            column![title_bar::view(&self.search, self.main_maximized), body]
+                .width(Fill)
+                .height(Fill)
+                .into(),
+            self.main_maximized,
+        )
     }
 
     fn button_playing(&self, id: &str) -> bool {

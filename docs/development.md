@@ -119,6 +119,8 @@ cargo test --locked
 ```
 
 Automated tests cover concurrent playback requests, group cancellation and transport,
+application passthrough discovery and endpoint loss, bounded live capture,
+remote gain, circular capture buffers, and active blink redraws,
 overlap persistence, crop boundaries and gain, bounded waveform summaries,
 waveform selection, stale analysis results, color/reset persistence, microphone-path discovery, channel mapping, reused stream
 IDs, stale playback commands, Audio decoding into both outputs, independent gains,

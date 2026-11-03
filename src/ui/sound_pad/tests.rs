@@ -6,6 +6,62 @@ use iced::widget::{button, mouse_area, space};
 use raspiboard::theme::ThemeChoice;
 
 #[test]
+fn passthrough_blinks_every_second_with_a_brief_filament_fade() {
+    let level = |ms| blink_intensity(Duration::from_millis(ms));
+    assert_eq!(level(0), 0.0);
+    assert!(level(20) > 0.0 && level(20) < 1.0);
+    assert_eq!(level(40), 1.0);
+    assert_eq!(level(999), 1.0);
+    assert_eq!(level(500), 1.0);
+    assert_eq!(level(1000), 1.0);
+    assert!(level(1030) > 0.0 && level(1030) < 1.0);
+    assert_eq!(level(1060), 0.0);
+    assert_eq!(level(1999), 0.0);
+    assert_eq!(level(2000), 0.0);
+    assert_eq!(level(2040), 1.0);
+}
+
+#[test]
+fn passthrough_blink_requests_redraws_only_while_active() {
+    let make = |active| {
+        blinking::<(), TestRenderer>(
+            button(space()).width(32).height(28).on_press(()),
+            true,
+            active,
+            Color::from_rgb8(0xa7, 0xf3, 0xd0),
+        )
+    };
+    let mut widget = make(true);
+    let mut tree = Tree::new(widget.as_widget());
+    let node = widget.as_widget_mut().layout(
+        &mut tree,
+        &TestRenderer,
+        &layout::Limits::new(Size::ZERO, Size::new(32.0, 28.0)),
+    );
+    let now = Instant::now();
+    for active in [true, false] {
+        widget = make(active);
+        tree.diff(widget.as_widget());
+        let mut messages = Vec::new();
+        let mut shell = Shell::new(&mut messages);
+        widget.as_widget_mut().update(
+            &mut tree,
+            &Event::Window(window::Event::RedrawRequested(now)),
+            Layout::new(&node),
+            mouse::Cursor::Unavailable,
+            &TestRenderer,
+            &mut clipboard::Null,
+            &mut shell,
+            &Rectangle::with_size(Size::new(32.0, 28.0)),
+        );
+        assert_eq!(
+            shell.redraw_request() != window::RedrawRequest::Wait,
+            active
+        );
+    }
+}
+
+#[test]
 fn custom_colors_parse_only_full_rgb_and_round_trip_opaquely() {
     for (input, expected) in [
         ("#000000", Color::BLACK),

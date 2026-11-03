@@ -1,6 +1,54 @@
 use super::*;
 
 #[test]
+fn passthrough_capture_accepts_paused_links_but_not_negotiation_or_errors() {
+    let mut graph = Graph::default();
+    graph.insert(99, Kind::Link, props(&[("link.state", "paused")]));
+    assert!(graph.link_connected(99).unwrap());
+    assert!(!graph.link_ready(99).unwrap());
+    graph.update(99, props(&[("link.state", "negotiating")]));
+    assert!(!graph.link_connected(99).unwrap());
+    graph.update(
+        99,
+        props(&[("link.state", "error"), ("link.error", "denied")]),
+    );
+    assert!(graph.link_connected(99).unwrap_err().contains("denied"));
+    graph.remove(99);
+    assert!(!graph.link_connected(99).unwrap());
+}
+
+#[test]
+fn passthrough_discovers_only_external_playback_streams_and_checks_serials() {
+    let mut graph = Graph::default();
+    for (id, class, app, role) in [
+        (10, "Stream/Output/Audio", "browser", "Music"),
+        (20, "Stream/Input/Audio", "recorder", "Communication"),
+        (30, "Stream/Output/Audio", APP_ID, "Music"),
+        (40, "Audio/Sink", "desktop", "Music"),
+        (50, "Stream/Output/Audio", "filter", "DSP"),
+    ] {
+        graph.insert(
+            id,
+            Kind::Node,
+            props(&[
+                ("object.serial", &id.to_string()),
+                ("media.class", class),
+                ("application.id", app),
+                ("application.name", app),
+                ("media.role", role),
+            ]),
+        );
+    }
+    let sources = graph.sources();
+    assert_eq!(sources.len(), 1);
+    assert_eq!(sources[0].display_label, "browser [10]");
+    assert_eq!(graph.resolve(&sources[0]).unwrap(), 10);
+    graph.update(10, props(&[("object.serial", "999")]));
+    assert!(graph.resolve(&sources[0]).is_err());
+    assert_ne!(graph.sources()[0].id, sources[0].id);
+}
+
+#[test]
 fn existing_but_failed_or_negotiating_links_are_not_ready() {
     let mut graph = Graph::default();
     graph.insert(

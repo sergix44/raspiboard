@@ -58,6 +58,32 @@ stream closes, playback stops and the dropdown returns to No Output. Discovery
 may select the first available recording stream after startup or reconnection,
 but never starts playback by itself.
 
+## Application audio passthrough
+
+Use passthrough to share a browser video, game, or another audio player's sound
+with the selected recording application:
+
+1. Start audio in the source application so it opens a playback stream.
+2. Choose it in the upper **No Input** dropdown, then choose the receiving
+   application in the lower output dropdown. Stream IDs distinguish multiple
+   streams from one application, including separate browser streams.
+3. Click the green **Cable** button. Once connected, it blinks with a one-second
+   on/off rhythm and a brief filament fade. The routing arrow on its left stays
+   green. Click again to stop sharing.
+
+**Remote Volume** controls both shared application audio and soundboard clips.
+You still hear the source through its normal desktop output and volume controls;
+Raspiboard's Local Volume controls soundboard clips only. Clips and the existing
+microphone can play alongside passthrough. Clip Play, Pause, Stop, and Options
+Preview leave passthrough running.
+
+Passthrough starts off every launch. Changing either dropdown turns it off;
+enable it again to share the new selection. Closing the selected source or
+destination, or losing the audio connection, also turns it off. If a browser
+recreates its playback stream between videos, select its new stream and enable
+passthrough again. Pausing a source while its stream remains open keeps sharing
+enabled. Mono and stereo sources are supported.
+
 ## Crop and preview
 
 Open a pad's **Options** to view its waveform. Drag across it or adjust the

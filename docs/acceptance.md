@@ -127,6 +127,39 @@ Wayland and X11 where available. Build and check packages as described in
     and check the application menu and dock. Both windows should group under
     Raspiboard. Launch from another working directory: the icon still loads.
 
+## Application audio passthrough
+
+1. Run `cargo run --locked` in a graphical desktop session. Play a browser video
+   or an external player and open a recording application's microphone stream.
+   Expect an upper source selector and lower destination selector beside a
+   light-green Cable button, with a routing arrow on their left. Verify both
+   themes and the minimum window size. The Cable icon must render without a
+   missing-character box; the button and arrow are dim when off.
+2. With No Input or No Output selected, expect the Cable button to be disabled.
+   Select the playing source and receiving application, then click Cable.
+   Expect a recording-light blink: one second on, one second off, with a brief warm-up
+   and afterglow, plus a steady green arrow once routing connects. Verify the
+   recording application receives only the chosen source,
+   alongside the microphone. Another playing application's audio is not shared.
+   The source must remain audible through its existing speakers or headphones.
+3. Change Remote Volume to 0%, 50%, and 100%. Expect the receiving application's
+   shared feed to change without changing your normal source listening level.
+   With the volume chain unlinked, Local Volume must not change shared audio.
+   Test both a mono source and a stereo source, including a mono destination.
+4. Play a clip while sharing. Expect the source, clip and microphone together.
+   Pause/resume and Stop the clip, and use Options Preview: sharing continues.
+   Change the selected source: clips continue, but passthrough turns off until
+   enabled again. Change the destination: both clips and passthrough stop.
+5. Pause/resume the source while its stream remains open. Expect silence/resumed
+   sharing without disabling passthrough. Close the selected source or recording
+   stream. Expect passthrough to turn off, its arrow to dim, and an appropriate
+   error. If a browser recreates a stream, select its new entry and enable again.
+6. Toggle passthrough repeatedly, including while clips play. Expect no duplicate
+   audio or lingering shared sound after disabling. Restart Raspiboard and expect
+   sharing off. Disconnect/reconnect PipeWire: sharing must remain off after
+   reconnection. Quitting Raspiboard restores ordinary source listening and
+   microphone behavior without leaving any passthrough links behind.
+
 ## Adding sounds
 
 1. Right-click empty grid space. Expect a menu near the pointer containing

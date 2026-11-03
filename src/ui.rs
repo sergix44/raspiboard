@@ -20,6 +20,7 @@ mod grid_menu;
 mod hotkeys;
 pub(crate) mod icons;
 mod options_state;
+mod passthrough;
 mod persistence;
 mod reorder;
 mod settings;
@@ -83,6 +84,8 @@ pub enum Message {
     Audio(Event),
     Hotkeys(raspiboard::hotkeys::Event),
     SelectTarget(Option<Target>),
+    SelectSource(Option<Target>),
+    TogglePassthrough,
     OpenButtonMenu(String),
     OpenButtonOptions(String),
     CloseButtonOptions,
@@ -362,11 +365,21 @@ impl Soundboard {
                 self.controller = Some(controller);
                 self.send_volumes();
             }
-            Message::Audio(Event::Changed(snapshot)) => self.audio = snapshot,
+            Message::Audio(Event::Changed(snapshot)) => self.audio = *snapshot,
             Message::SelectTarget(target) => {
                 // Explicit None also cancels default selection before discovery finishes.
                 if target.is_none() || self.audio.selected != target {
                     self.send(Command::Select(target));
+                }
+            }
+            Message::SelectSource(source) => {
+                if self.audio.source != source {
+                    self.send(Command::SelectSource(source));
+                }
+            }
+            Message::TogglePassthrough => {
+                if let Some(command) = self.passthrough_command() {
+                    self.send(command);
                 }
             }
             Message::OpenButtonMenu(id) => {
@@ -554,7 +567,7 @@ impl Soundboard {
             transport,
             self.volume_controls(),
             space::horizontal(),
-            self.target_controls(),
+            self.routing_controls(),
             sound_pad::animated(
                 button(icon(Icon::Settings).size(16))
                     .width(32)

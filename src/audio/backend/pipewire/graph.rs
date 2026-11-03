@@ -22,13 +22,14 @@ impl Graph {
     pub fn resolve(&self, target: &Target) -> Result<u32, String> {
         self.objects
             .iter()
-            .find_map(|(&id, (_, props))| {
+            .find_map(|(&id, (kind, props))| {
+                if *kind != Kind::Node {
+                    return None;
+                }
                 let serial = props.get("object.serial")?.parse().ok()?;
                 (identity(id, serial) == target.id).then_some(id)
             })
-            .ok_or_else(|| {
-                "The selected recording stream closed. Select an application again.".into()
-            })
+            .ok_or_else(|| "The selected audio stream closed. Select an application again.".into())
     }
 
     pub fn insert(&mut self, id: u32, kind: Kind, props: Properties) {
@@ -78,6 +79,31 @@ impl Graph {
                     id: identity(id, props.get("object.serial")?.parse().ok()?),
                     display_label: compact_label(name, id),
                     label: format!("{name}{description} [{id}] — {source}"),
+                })
+            })
+            .collect()
+    }
+
+    pub fn sources(&self) -> Vec<Target> {
+        self.objects
+            .iter()
+            .filter_map(|(&id, (kind, props))| {
+                if *kind != Kind::Node
+                    || value(props, "media.class") != "Stream/Output/Audio"
+                    || value(props, "application.id") == APP_ID
+                    || value(props, "media.role") == "DSP"
+                {
+                    return None;
+                }
+                let name = ["application.name", "node.description", "node.name"]
+                    .iter()
+                    .find_map(|key| props.get(*key))
+                    .map(String::as_str)
+                    .unwrap_or("Unnamed application");
+                Some(Target {
+                    id: identity(id, props.get("object.serial")?.parse().ok()?),
+                    display_label: compact_label(name, id),
+                    label: format!("{name} [{}] — {}", id, value(props, "media.name")),
                 })
             })
             .collect()
@@ -182,6 +208,16 @@ impl Graph {
             )),
             "active" => Ok(true),
             _ => Ok(false),
+        }
+    }
+
+    pub fn link_connected(&self, id: u32) -> Result<bool, String> {
+        if self.objects.get(&id).is_some_and(|(kind, props)| {
+            *kind == Kind::Link && value(props, "link.state") == "paused"
+        }) {
+            Ok(true)
+        } else {
+            self.link_ready(id)
         }
     }
 }

@@ -29,6 +29,14 @@ pub enum PlaybackStatus {
     Paused,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PassthroughStatus {
+    #[default]
+    Off,
+    Connecting,
+    Active,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlaybackInstance {
     pub button_id: String,
@@ -41,6 +49,9 @@ pub struct Snapshot {
     pub connected: bool,
     pub targets: Vec<Target>,
     pub selected: Option<Target>,
+    pub sources: Vec<Target>,
+    pub source: Option<Target>,
+    pub passthrough: PassthroughStatus,
     pub playback: PlaybackStatus,
     pub playbacks: Vec<PlaybackInstance>,
     pub error: Option<String>,
@@ -49,6 +60,8 @@ pub struct Snapshot {
 #[derive(Debug)]
 pub enum Command {
     Select(Option<Target>),
+    SelectSource(Option<Target>),
+    SetPassthrough(bool),
     Play {
         button_id: String,
         overlap: bool,
@@ -85,7 +98,7 @@ impl Controller {
 #[derive(Debug, Clone)]
 pub enum Event {
     Ready(Controller),
-    Changed(Snapshot),
+    Changed(Box<Snapshot>),
 }
 
 struct WorkerGuard(Arc<AtomicBool>);
@@ -109,10 +122,10 @@ pub fn events() -> impl Stream<Item = Event> {
                 .spawn(move || backend::run(receiver, snapshots, shutdown));
             if let Err(error) = worker {
                 let _ = output
-                    .send(Event::Changed(Snapshot {
+                    .send(Event::Changed(Box::new(Snapshot {
                         error: Some(format!("Cannot start audio: {error}")),
                         ..Default::default()
-                    }))
+                    })))
                     .await;
                 return;
             }
@@ -124,15 +137,19 @@ pub fn events() -> impl Stream<Item = Event> {
                 return;
             }
             while let Ok(snapshot) = changes.recv().await {
-                if output.send(Event::Changed(snapshot)).await.is_err() {
+                if output
+                    .send(Event::Changed(Box::new(snapshot)))
+                    .await
+                    .is_err()
+                {
                     return;
                 }
             }
             let _ = output
-                .send(Event::Changed(Snapshot {
+                .send(Event::Changed(Box::new(Snapshot {
                     error: Some("The audio worker stopped. Restart the app to reconnect.".into()),
                     ..Default::default()
-                }))
+                })))
                 .await;
         },
     )

@@ -15,6 +15,7 @@ pub(super) enum Icon {
     Delete,
     Add,
     ArrowRight,
+    Cable,
 }
 
 pub(super) fn icon(icon: Icon) -> Text<'static> {
@@ -29,6 +30,7 @@ pub(super) fn icon(icon: Icon) -> Text<'static> {
         Icon::Delete => '\u{e18d}',
         Icon::Add => '\u{e140}',
         Icon::ArrowRight => '\u{e04d}',
+        Icon::Cable => '\u{e4e7}',
     };
     text(glyph.to_string())
         .font(FONT)

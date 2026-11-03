@@ -5,10 +5,11 @@ use self::{
 };
 mod discovery;
 mod graph;
+mod passthrough;
 mod player;
 mod route;
 mod session;
-use crate::audio::{Command, PlaybackInstance, PlaybackStatus, Snapshot};
+use crate::audio::{Command, PassthroughStatus, PlaybackInstance, PlaybackStatus, Snapshot};
 use crate::audio::{PlaybackOptions, Target, buffer, job};
 use pipewire as pw;
 use std::{
@@ -52,6 +53,8 @@ struct Engine {
     sessions: Vec<Session>,
     retiring: Vec<(Playback, Instant)>,
     sequence: u64,
+    passthrough: Option<passthrough::Passthrough>,
+    retiring_passthrough: Vec<passthrough::RetiringPassthrough>,
 }
 
 fn playback_status(instances: &[PlaybackInstance]) -> PlaybackStatus {
@@ -68,6 +71,23 @@ fn playback_status(instances: &[PlaybackInstance]) -> PlaybackStatus {
 impl Engine {
     fn refresh_targets(&mut self, graph: &Graph) {
         self.snapshot.targets = graph.targets();
+        self.snapshot.sources = graph.sources();
+        if let Some(source) = &self.snapshot.source {
+            self.snapshot.source = self
+                .snapshot
+                .sources
+                .iter()
+                .find(|current| current.id == source.id)
+                .cloned();
+            if self.snapshot.source.is_none() {
+                let sharing = self.snapshot.passthrough != PassthroughStatus::Off;
+                self.stop_passthrough();
+                if sharing {
+                    self.snapshot.error =
+                        Some("The passthrough source closed. Select an application again.".into());
+                }
+            }
+        }
         if let Some(selected) = &self.snapshot.selected {
             self.target_initialized = true;
             self.snapshot.selected = self
@@ -76,12 +96,16 @@ impl Engine {
                 .iter()
                 .find(|target| target.id == selected.id)
                 .cloned();
-            if self.snapshot.selected.is_none()
-                && !self.sessions.iter().any(|session| session.preview)
-            {
-                self.fail(
-                    "The selected recording stream closed. Select an application again.".into(),
-                );
+            if self.snapshot.selected.is_none() {
+                let sharing = self.snapshot.passthrough != PassthroughStatus::Off;
+                self.stop_passthrough();
+                let error =
+                    "The selected recording stream closed. Select an application again.".into();
+                if !self.sessions.iter().any(|session| session.preview) {
+                    self.fail(error);
+                } else if sharing {
+                    self.snapshot.error = Some(error);
+                }
             }
         }
         if !self.target_initialized
@@ -90,6 +114,17 @@ impl Engine {
             self.snapshot.selected = Some(target.clone());
             self.target_initialized = true;
         }
+    }
+
+    fn stop_passthrough(&mut self) {
+        if let Some(retiring) = self
+            .passthrough
+            .take()
+            .and_then(passthrough::Passthrough::stop)
+        {
+            self.retiring_passthrough.push(retiring);
+        }
+        self.snapshot.passthrough = PassthroughStatus::Off;
     }
 
     fn refresh_playback(&mut self) {
@@ -154,6 +189,28 @@ impl Engine {
 
     fn command(&mut self, command: Command, volumes: &OutputVolumes) {
         match command {
+            Command::SelectSource(source) => {
+                self.stop_passthrough();
+                self.snapshot.error = None;
+                self.snapshot.source = source.and_then(|source| {
+                    self.snapshot
+                        .sources
+                        .iter()
+                        .find(|current| current.id == source.id)
+                        .cloned()
+                });
+            }
+            Command::SetPassthrough(enabled) => {
+                self.stop_passthrough();
+                self.snapshot.error = None;
+                if enabled {
+                    if self.snapshot.source.is_some() && self.snapshot.selected.is_some() {
+                        self.snapshot.passthrough = PassthroughStatus::Connecting;
+                    } else {
+                        self.snapshot.error = Some("Select a source and an output application before enabling passthrough.".into());
+                    }
+                }
+            }
             Command::SetVolumes { remote, local } => volumes.set(remote, local),
             Command::Pause => self.set_paused(true),
             Command::Resume => self.set_paused(false),
@@ -171,6 +228,7 @@ impl Engine {
                 self.snapshot.error = None;
             }
             Command::Select(target) => {
+                self.stop_passthrough();
                 self.target_initialized = true;
                 self.stop();
                 self.snapshot.error = None;
@@ -212,9 +270,22 @@ impl Engine {
     }
 
     fn tick(&mut self, core: &pw::core::CoreRc, graph: &Graph, volumes: &OutputVolumes) {
+        self.retiring_passthrough
+            .retain_mut(passthrough::RetiringPassthrough::retain);
         self.retiring
             .retain_mut(|(playback, since)| playback.retire(*since));
         self.refresh_targets(graph);
+        if self.snapshot.passthrough != PassthroughStatus::Off {
+            let result = self.tick_passthrough(core, graph, volumes);
+            match result {
+                Ok(true) => self.snapshot.passthrough = PassthroughStatus::Active,
+                Ok(false) => {}
+                Err(error) => {
+                    self.stop_passthrough();
+                    self.snapshot.error = Some(format!("Passthrough: {error}"));
+                }
+            }
+        }
         let mut index = 0;
         while index < self.sessions.len() {
             match self.sessions[index].tick(core, graph, volumes) {
@@ -224,6 +295,36 @@ impl Engine {
             }
         }
         self.refresh_playback();
+    }
+
+    fn tick_passthrough(
+        &mut self,
+        core: &pw::core::CoreRc,
+        graph: &Graph,
+        volumes: &OutputVolumes,
+    ) -> Result<bool, String> {
+        if self.passthrough.is_none() {
+            self.sequence += 1;
+            let source = self
+                .snapshot
+                .source
+                .as_ref()
+                .ok_or("Select a source application.")?;
+            let target = self
+                .snapshot
+                .selected
+                .clone()
+                .ok_or("Select an output application.")?;
+            self.passthrough = Some(passthrough::Passthrough::new(
+                core,
+                graph,
+                source,
+                target,
+                self.sequence,
+                volumes,
+            )?);
+        }
+        self.passthrough.as_mut().unwrap().tick(core, graph)
     }
 }
 
@@ -317,6 +418,7 @@ fn connection(
         let mut engine = tick_engine.borrow_mut();
         let graph = graph.borrow();
         if let Some(error) = tick_errors.borrow_mut().take() {
+            engine.stop_passthrough();
             engine.fail(error);
         }
         engine.tick(&tick_core, &graph, &volumes);
@@ -339,6 +441,7 @@ fn connection(
         .map_err(|e| e.to_string())?;
     mainloop.run();
     engine.borrow_mut().stop();
+    engine.borrow_mut().stop_passthrough();
     let error = errors.borrow_mut().take();
     match error {
         Some(error) => Err(error),
@@ -350,6 +453,99 @@ fn connection(
 mod tests {
     use super::graph::Kind;
     use super::*;
+
+    #[test]
+    fn passthrough_requires_both_endpoints_and_is_independent_of_clip_transport() {
+        let mut engine = Engine::default();
+        let volumes = OutputVolumes::default();
+        engine.command(Command::SetPassthrough(true), &volumes);
+        assert_eq!(
+            engine.snapshot.passthrough,
+            crate::audio::PassthroughStatus::Off
+        );
+        assert!(engine.snapshot.error.is_some());
+        engine.snapshot.sources = vec![target(100)];
+        engine.command(Command::SelectSource(Some(target(100))), &volumes);
+        engine.snapshot.selected = Some(target(200));
+        engine.command(Command::SetPassthrough(true), &volumes);
+        assert_eq!(
+            engine.snapshot.passthrough,
+            crate::audio::PassthroughStatus::Connecting
+        );
+        for command in [Command::Stop, Command::Pause, Command::Resume] {
+            engine.command(command, &volumes);
+            assert_eq!(
+                engine.snapshot.passthrough,
+                crate::audio::PassthroughStatus::Connecting
+            );
+        }
+        engine.command(Command::Select(None), &volumes);
+        assert_eq!(
+            engine.snapshot.passthrough,
+            crate::audio::PassthroughStatus::Off
+        );
+    }
+
+    #[test]
+    fn passthrough_source_disappearance_and_reused_ids_disable_sharing() {
+        let mut engine = Engine::default();
+        engine.snapshot.source = Some(target(200));
+        engine.snapshot.passthrough = crate::audio::PassthroughStatus::Active;
+        let mut graph = Graph::default();
+        graph.insert(
+            20,
+            Kind::Node,
+            [
+                ("object.serial".into(), "999".into()),
+                ("media.class".into(), "Stream/Output/Audio".into()),
+            ]
+            .into(),
+        );
+        engine.refresh_targets(&graph);
+        assert!(engine.snapshot.source.is_none());
+        assert_eq!(
+            engine.snapshot.passthrough,
+            crate::audio::PassthroughStatus::Off
+        );
+        assert!(engine.snapshot.error.is_some());
+    }
+
+    #[test]
+    fn passthrough_is_not_stopped_by_a_rejected_clip_command() {
+        let mut engine = Engine::default();
+        engine.snapshot.passthrough = PassthroughStatus::Active;
+        engine.command(
+            Command::Play {
+                button_id: "test".into(),
+                overlap: false,
+                path: "must-not-open.wav".into(),
+                target: Some(target(200)),
+                options: PlaybackOptions::default(),
+            },
+            &OutputVolumes::default(),
+        );
+        assert_eq!(engine.snapshot.passthrough, PassthroughStatus::Active);
+        assert!(engine.snapshot.error.is_some());
+    }
+
+    #[test]
+    fn passthrough_source_changes_do_not_stop_clips_and_stale_sources_are_rejected() {
+        let mut engine = Engine::default();
+        let volumes = OutputVolumes::default();
+        engine.snapshot.sources = vec![target(100), target(200)];
+        engine.snapshot.source = Some(target(100));
+        engine.snapshot.passthrough = PassthroughStatus::Active;
+        engine.snapshot.playback = PlaybackStatus::Playing;
+        engine.command(Command::SelectSource(Some(target(200))), &volumes);
+        assert_eq!(engine.snapshot.source, Some(target(200)));
+        assert_eq!(engine.snapshot.passthrough, PassthroughStatus::Off);
+        assert_eq!(engine.snapshot.playback, PlaybackStatus::Playing);
+        engine.command(Command::SelectSource(Some(target(999))), &volumes);
+        assert!(engine.snapshot.source.is_none());
+        engine.snapshot.selected = Some(target(300));
+        engine.command(Command::SetPassthrough(true), &volumes);
+        assert_eq!(engine.snapshot.passthrough, PassthroughStatus::Off);
+    }
 
     fn target(serial: u64) -> Target {
         Target {
@@ -389,6 +585,33 @@ mod tests {
         assert_eq!(engine.snapshot.playback, PlaybackStatus::Loading);
         assert!(!engine.sessions.is_empty());
         assert!(engine.snapshot.error.is_none());
+    }
+
+    #[test]
+    fn passthrough_destination_closing_during_preview_reports_loss_without_stopping_preview() {
+        let mut engine = Engine::default();
+        engine.snapshot.selected = Some(target(200));
+        engine.snapshot.passthrough = PassthroughStatus::Active;
+        engine.command(
+            Command::Preview {
+                button_id: "test".into(),
+                path: std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("tests/fixtures/audio/tone.flac"),
+                options: PlaybackOptions::default(),
+            },
+            &OutputVolumes::default(),
+        );
+        assert_eq!(engine.snapshot.passthrough, PassthroughStatus::Active);
+        engine.refresh_targets(&Graph::default());
+        assert_eq!(engine.snapshot.passthrough, PassthroughStatus::Off);
+        assert_eq!(engine.snapshot.playback, PlaybackStatus::Loading);
+        assert!(
+            engine
+                .snapshot
+                .error
+                .as_ref()
+                .is_some_and(|error| error.contains("recording stream closed"))
+        );
     }
 
     #[test]

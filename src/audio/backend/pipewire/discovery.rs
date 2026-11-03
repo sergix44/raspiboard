@@ -86,6 +86,7 @@ impl Discovery {
                                 let mut props = info.props().map(properties).unwrap_or_default();
                                 let (state, error) = match info.state() {
                                     pw::link::LinkState::Active => ("active", ""),
+                                    pw::link::LinkState::Paused => ("paused", ""),
                                     pw::link::LinkState::Error(error) => ("error", error),
                                     _ => ("pending", ""),
                                 };

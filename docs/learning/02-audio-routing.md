@@ -258,6 +258,43 @@ Several copies of one pad therefore keep it illuminated until its last playing
 copy finishes. The collection stores independent instances even when several Play
 commands arrive before the first decoder or route is ready.
 
+## Live application passthrough
+
+The upper footer selector lists external `Stream/Output/Audio` nodes separately
+from recording destinations. `Snapshot::sources`, `source`, and `passthrough`
+are backend-owned state. `SelectSource` changes selection; `SetPassthrough`
+enables or disables the live feed. Sharing starts off and is not persisted.
+
+`backend/pipewire/passthrough.rs` owns one capture stream, a remote `Player`,
+and a private `Route`. Owned links tap the selected application's existing
+output ports without removing its speaker links. The capture adapter negotiates
+48 kHz mono or stereo floating-point samples; mono frames are duplicated into
+stereo. The callback respects PipeWire chunk offset, size and stride, and pushes
+into a bounded 4096-frame queue without waiting. A full queue drops incoming
+frames instead of blocking the native loop. The existing player handles remote
+gain, sanitizing samples, clipping, and conversion to the destination's layout.
+There is no second local copy of the source audio.
+
+Capture and remote playback wait for owned links to connect before enabling
+sample delivery. Capture links may be paused while a source is silent; remote
+output links must be active. Proxy failures, removed links and startup timeouts
+disable sharing and publish a visible error. Disabling drops the capture and
+its links immediately, then retains active remote playback for its existing
+five-millisecond fade and drain, with a three-second cleanup limit.
+
+The clip sessions and passthrough have separate lifecycles. Clip transport and
+Preview do not stop sharing. Changing either selector disables sharing; closing
+either selected node, serial reuse, disconnecting PipeWire or exiting removes
+the owned route. Reconnection never resumes sharing automatically. Source
+selection changes leave clip playback alone; destination changes stop clips as
+before. Neither path modifies existing microphone or desktop links.
+
+`ui/passthrough.rs` renders the stacked selectors, Cable toggle and steady green
+routing arrow. The raised-button widget requests periodic redraws only while
+its two-second blink cycle is running, with one-second on/off phases softened by
+a 40 ms warm-up and 60 ms afterglow. Backend state confirms active sharing;
+clicking the button does not optimistically light the arrow.
+
 ## Platform boundary
 
 The UI uses `audio::Controller`, commands and snapshot events. Targets carry an

@@ -3,6 +3,36 @@ use raspiboard::hotkeys::{Assignment, Event as HotkeyEvent};
 use raspiboard::theme::ThemeChoice;
 
 #[test]
+fn passthrough_toggle_requires_endpoints_and_follows_confirmed_backend_state() {
+    let mut board = default_board();
+    assert!(board.passthrough_command().is_none());
+    board.audio.connected = true;
+    let endpoint = Target {
+        id: "source".into(),
+        display_label: "Browser".into(),
+        label: "Browser".into(),
+    };
+    board.audio.source = Some(endpoint.clone());
+    assert!(board.passthrough_command().is_none());
+    board.audio.selected = Some(endpoint);
+    assert!(matches!(
+        board.passthrough_command(),
+        Some(Command::SetPassthrough(true))
+    ));
+    for status in [
+        audio::PassthroughStatus::Connecting,
+        audio::PassthroughStatus::Active,
+    ] {
+        board.audio.passthrough = status;
+        assert!(matches!(
+            board.passthrough_command(),
+            Some(Command::SetPassthrough(false))
+        ));
+    }
+    assert_eq!(passthrough::SourceChoice(None).to_string(), "No Input");
+}
+
+#[test]
 fn hotkeys_register_only_enabled_sounds_and_confirm_the_desktop_assignment() {
     let mut board = default_board();
     assert!(board.hotkeys.config.bindings.is_empty());

@@ -56,6 +56,26 @@ pub(super) fn raised<'a, Message: Clone + 'a, Renderer: renderer::Renderer + 'a>
     tone: Tone,
     overlap: bool,
 ) -> Element<'a, Message, Theme, Renderer> {
+    pad(content, enabled, playing, tone, overlap, false)
+}
+
+pub(super) fn blinking<'a, Message: Clone + 'a, Renderer: renderer::Renderer + 'a>(
+    content: button::Button<'a, Message, Theme, Renderer>,
+    enabled: bool,
+    active: bool,
+    color: Color,
+) -> Element<'a, Message, Theme, Renderer> {
+    pad(content, enabled, active, Tone::Custom(color), false, true)
+}
+
+fn pad<'a, Message: Clone + 'a, Renderer: renderer::Renderer + 'a>(
+    content: button::Button<'a, Message, Theme, Renderer>,
+    enabled: bool,
+    playing: bool,
+    tone: Tone,
+    overlap: bool,
+    blink: bool,
+) -> Element<'a, Message, Theme, Renderer> {
     Element::new(AnimatedPad {
         content: content
             .style(move |theme, status| style(theme, status, playing, tone))
@@ -64,6 +84,7 @@ pub(super) fn raised<'a, Message: Clone + 'a, Renderer: renderer::Renderer + 'a>
         playing,
         tone,
         overlap,
+        blink,
     })
 }
 
@@ -129,6 +150,21 @@ pub(super) fn shade(color: Color, factor: f32) -> Color {
     }
 }
 
+fn blink_intensity(elapsed: Duration) -> f32 {
+    let ms = (elapsed.as_micros() % 2_000_000) as f32 / 1000.0;
+    if ms < 40.0 {
+        let warmup = ms / 40.0;
+        warmup * (2.0 - warmup)
+    } else if ms < 1000.0 {
+        1.0
+    } else if ms < 1060.0 {
+        let afterglow = 1.0 - (ms - 1000.0) / 60.0;
+        afterglow * afterglow
+    } else {
+        0.0
+    }
+}
+
 fn quad(bounds: Rectangle, radius: f32) -> renderer::Quad {
     renderer::Quad {
         bounds,
@@ -147,6 +183,7 @@ struct AnimatedPad<'a, Message, Renderer> {
     playing: bool,
     tone: Tone,
     overlap: bool,
+    blink: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -207,6 +244,7 @@ struct State {
     now: Instant,
     pressed: bool,
     enabled: bool,
+    blink_started: Option<Instant>,
 }
 
 impl State {
@@ -224,6 +262,7 @@ impl State {
             now: Instant::now(),
             pressed: false,
             enabled,
+            blink_started: None,
         }
     }
 
@@ -349,6 +388,12 @@ impl<Message, Renderer: renderer::Renderer> Widget<Message, Theme, Renderer>
             Phase::Hovered
         };
         state.transition(phase, now);
+        if self.blink && self.enabled && self.playing {
+            state.blink_started.get_or_insert(now);
+            shell.request_redraw_at(now + Duration::from_millis(33));
+        } else {
+            state.blink_started = None;
+        }
         if state.motion.is_animating(state.now) {
             shell.request_redraw();
         }
@@ -368,11 +413,17 @@ impl<Message, Renderer: renderer::Renderer> Widget<Message, Theme, Renderer>
         let tokens = tokens(theme);
         let layers = state.layers();
         let bounds = layout.bounds();
+        let blink = state.blink_started.map_or(1.0, |start| {
+            blink_intensity(state.now.saturating_duration_since(start))
+        });
         let face = shade(
             colors(theme, self.enabled, self.playing, self.tone).color,
-            layers.brightness,
+            layers.brightness * (0.45 + 0.55 * blink),
         );
-        if let Some(light) = backlight(theme, self.enabled, self.playing, self.tone) {
+        let light = backlight(theme, self.enabled, self.playing, self.tone)
+            .filter(|_| blink > 0.0)
+            .map(|color| color.scale_alpha(blink));
+        if let Some(light) = light {
             let backlight = Rectangle {
                 x: bounds.x - 1.0,
                 y: bounds.y - 1.0,
@@ -439,8 +490,7 @@ impl<Message, Renderer: renderer::Renderer> Widget<Message, Theme, Renderer>
         renderer.fill_quad(
             renderer::Quad {
                 border: Border {
-                    color: backlight(theme, self.enabled, self.playing, self.tone)
-                        .unwrap_or(tokens.border),
+                    color: light.unwrap_or(tokens.border),
                     width: 1.0,
                     radius: tokens.radius.into(),
                 },

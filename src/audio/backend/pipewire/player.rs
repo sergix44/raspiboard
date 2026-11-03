@@ -115,25 +115,7 @@ impl Player {
             })
             .register()
             .map_err(|e| e.to_string())?;
-        let mut info = spa::param::audio::AudioInfoRaw::new();
-        info.set_format(spa::param::audio::AudioFormat::F32LE);
-        info.set_rate(decoded.rate);
-        info.set_channels(2);
-        let mut position = [0; spa::param::audio::MAX_CHANNELS];
-        position[0] = spa::sys::SPA_AUDIO_CHANNEL_FL;
-        position[1] = spa::sys::SPA_AUDIO_CHANNEL_FR;
-        info.set_position(position);
-        let bytes = spa::pod::serialize::PodSerializer::serialize(
-            Cursor::new(Vec::new()),
-            &spa::pod::Value::Object(spa::pod::Object {
-                type_: spa::sys::SPA_TYPE_OBJECT_Format,
-                id: spa::sys::SPA_PARAM_EnumFormat,
-                properties: info.into(),
-            }),
-        )
-        .map_err(|e| format!("Cannot describe the audio format: {e:?}"))?
-        .0
-        .into_inner();
+        let bytes = audio_format(decoded.rate, 2)?;
         let pod = spa::pod::Pod::from_bytes(&bytes).ok_or("Invalid audio format descriptor.")?;
         stream
             .connect(
@@ -155,4 +137,29 @@ impl Player {
             stop,
         })
     }
+}
+
+pub(super) fn audio_format(rate: u32, channels: u32) -> Result<Vec<u8>, String> {
+    let mut info = spa::param::audio::AudioInfoRaw::new();
+    info.set_format(spa::param::audio::AudioFormat::F32LE);
+    info.set_rate(rate);
+    info.set_channels(channels);
+    let mut position = [0; spa::param::audio::MAX_CHANNELS];
+    if channels == 1 {
+        position[0] = spa::sys::SPA_AUDIO_CHANNEL_MONO;
+    } else {
+        position[0] = spa::sys::SPA_AUDIO_CHANNEL_FL;
+        position[1] = spa::sys::SPA_AUDIO_CHANNEL_FR;
+    }
+    info.set_position(position);
+    spa::pod::serialize::PodSerializer::serialize(
+        Cursor::new(Vec::new()),
+        &spa::pod::Value::Object(spa::pod::Object {
+            type_: spa::sys::SPA_TYPE_OBJECT_Format,
+            id: spa::sys::SPA_PARAM_EnumFormat,
+            properties: info.into(),
+        }),
+    )
+    .map(|result| result.0.into_inner())
+    .map_err(|e| format!("Cannot describe the audio format: {e:?}"))
 }

@@ -20,7 +20,7 @@ Wayland and X11 where available. Build and check packages as described in
    report `OK`. A failed build must leave previous successful downloads intact.
    Repeat with `--format deb` and `--format appimage`; each successful run must
    expose only its selected package and `SHA256SUMS` under `target/packages/`.
-2. Install with `sudo apt install ./target/packages/raspiboard_0.1.0-1_amd64.deb`.
+2. Install with `sudo apt install ./target/packages/raspiboard_0.2.0-1_amd64.deb`.
    Launch Raspiboard from the menu. Expect the supplied icon, correct window
    grouping, and a title matching the version in `Cargo.toml`.
 3. Choose an audio file through the desktop picker. Test local playback, then
@@ -31,7 +31,7 @@ Wayland and X11 where available. Build and check packages as described in
    desktop without that portal, expect a clear error while pad playback remains
    available.
 5. Save sound assignments and settings, close Raspiboard, and run
-   `./target/packages/Raspiboard-0.1.0-x86_64.AppImage`. Expect the same saved data
+   `./target/packages/Raspiboard-0.2.0-x86_64.AppImage`. Expect the same saved data
    and working playback, routing, picker, and supported hotkeys. Repeat with
    extraction-based launch and, when used, the documented per-user menu entry.
    Hover and click several pads, resize the window, open Sound options, and switch

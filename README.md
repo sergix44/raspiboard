@@ -60,7 +60,7 @@ Download the `.deb` or AppImage directly, plus its matching checksum file.
 From the directory containing the package:
 
 ```sh
-sudo apt install ./raspiboard_0.1.0-1_amd64.deb
+sudo apt install ./raspiboard_0.2.0-1_amd64.deb
 ```
 
 Then open **Raspiboard** from your application menu.
@@ -68,8 +68,8 @@ Then open **Raspiboard** from your application menu.
 ### Run the AppImage
 
 ```sh
-chmod +x Raspiboard-0.1.0-x86_64.AppImage
-./Raspiboard-0.1.0-x86_64.AppImage
+chmod +x Raspiboard-0.2.0-x86_64.AppImage
+./Raspiboard-0.2.0-x86_64.AppImage
 ```
 
 Use the filename matching your downloaded version. Both formats share the same

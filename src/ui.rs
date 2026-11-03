@@ -192,10 +192,14 @@ impl Soundboard {
     }
 
     fn send(&mut self, command: Command) {
+        log::debug!(target: "raspiboard::audio", "Command: {command:?}");
         self.error = match &self.controller {
             Some(controller) => controller.send(command).err(),
             None => Some("The audio worker is starting. Please try again.".into()),
         };
+        if let Some(error) = &self.error {
+            log::warn!(target: "raspiboard::audio", "{error}");
+        }
     }
 
     fn send_volumes(&mut self) {
@@ -313,6 +317,7 @@ impl Soundboard {
                 match result {
                     Ok(()) => return self.finish_quit(),
                     Err(error) => {
+                        log::error!(target: "raspiboard::recording", "Cannot finish recording: {error}");
                         self.error = Some(error);
                         if self.main_window.is_none() {
                             return self.open_main();
@@ -446,7 +451,20 @@ impl Soundboard {
                 self.controller = Some(controller);
                 self.send_volumes();
             }
-            Message::Audio(Event::Changed(snapshot)) => self.audio = *snapshot,
+            Message::Audio(Event::Changed(snapshot)) => {
+                if snapshot.connected != self.audio.connected {
+                    log::info!(target: "raspiboard::audio", "PipeWire connected: {}", snapshot.connected);
+                }
+                if snapshot.recording != self.audio.recording {
+                    log::info!(target: "raspiboard::recording", "Recording state: {:?}", snapshot.recording);
+                }
+                if snapshot.error != self.audio.error
+                    && let Some(error) = &snapshot.error
+                {
+                    log::error!(target: "raspiboard::audio", "{error}");
+                }
+                self.audio = *snapshot;
+            }
             Message::SelectTarget(target) => {
                 // Explicit None also cancels default selection before discovery finishes.
                 if target.is_none() || self.audio.selected != target {

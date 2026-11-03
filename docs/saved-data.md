@@ -6,10 +6,20 @@ The first launch creates this layout in your home directory:
 
 ```text
 ~/.raspiboard/
+├── instance.lock
+├── logs/
+│   └── raspiboard_rCURRENT.log
 ├── settings.toml
 └── categories/
     └── default.json
 ```
+
+`logs/raspiboard_rCURRENT.log` contains the current application log. Files rotate
+on the first message of a new local calendar day and when the app restarts;
+archives use names such as `raspiboard_r2026-11-03_09-30-00.log`. Startup and
+rotation remove application log archives last modified more than seven days ago.
+Other files in the directory are left alone. Logs are diagnostic data and do not
+need to be included in a board backup.
 
 `settings.toml` stores `theme = "Deck"` or `theme = "Console"`, `remote_volume`,
 `local_volume`, `volumes_linked`, and `sound_button_scale` (50–200, default 100).

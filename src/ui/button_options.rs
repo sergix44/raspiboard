@@ -95,6 +95,7 @@ impl Soundboard {
                 let _ = sender.send_blocking(result);
             });
         if let Err(error) = worker {
+            log::error!(target: "raspiboard::audio", "Cannot start waveform worker: {error}");
             self.options.loading = false;
             self.options.analysis_error = Some(format!("Cannot load waveform: {error}"));
             return Task::none();
@@ -143,7 +144,10 @@ impl Soundboard {
                 )
                 .err();
             }
-            Err(error) => self.options.analysis_error = Some(error),
+            Err(error) => {
+                log::error!(target: "raspiboard::audio", "Cannot load waveform: {error}");
+                self.options.analysis_error = Some(error);
+            }
         }
     }
 

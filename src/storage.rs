@@ -161,6 +161,10 @@ impl Store {
         self.root.join("recordings")
     }
 
+    pub fn logs_directory(&self) -> PathBuf {
+        self.root.join("logs")
+    }
+
     /// Keep the returned file open for the application's lifetime; never remove it.
     pub fn try_lock(&self) -> Result<Option<fs::File>, String> {
         fs::create_dir_all(&self.root)
@@ -556,6 +560,7 @@ impl Writer {
                             errors.remove(&target);
                         }
                         Err(error) => {
+                            log::error!("Cannot save {target}: {error}");
                             errors.insert(target, error);
                         }
                     }
@@ -611,7 +616,7 @@ impl Drop for Writer {
         if let Some(worker) = self.worker.take()
             && worker.join().is_err()
         {
-            eprintln!("The storage writer thread failed while draining queued saves");
+            log::error!("The storage writer thread failed while draining queued saves");
         }
     }
 }

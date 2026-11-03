@@ -3,12 +3,15 @@ mod ui;
 use ui::Soundboard;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let Some(_instance_lock) = raspiboard::storage::Store::in_home()?.try_lock()? else {
+    let store = raspiboard::storage::Store::in_home()?;
+    let Some(_instance_lock) = store.try_lock()? else {
         eprintln!("Raspiboard is already running.");
         return Ok(());
     };
 
-    iced::daemon(Soundboard::start, Soundboard::update, Soundboard::view)
+    let logger = raspiboard::logging::init(&store.logs_directory())?;
+    log::info!("Starting Raspiboard {}", env!("CARGO_PKG_VERSION"));
+    let result = iced::daemon(Soundboard::start, Soundboard::update, Soundboard::view)
         .title(Soundboard::title)
         .default_font(ui::fonts::FONT)
         .font(ui::fonts::FONT_BYTES)
@@ -22,6 +25,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             },
         )
         .subscription(Soundboard::subscription)
-        .run()?;
-    Ok(())
+        .run();
+    match &result {
+        Ok(()) => log::info!("Raspiboard stopped"),
+        Err(error) => log::error!("Application failed: {error}"),
+    }
+    logger.shutdown();
+    result.map_err(Into::into)
 }

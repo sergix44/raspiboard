@@ -58,6 +58,8 @@ toml = "1.1.8"
 uuid = { version = "1.29.0", features = ["v7"] }
 image = { version = "0.25", default-features = false, features = ["png"] }
 libloading = "0.8.9"
+log = { version = "0.4", default-features = false }
+flexi_logger = { version = "0.31", default-features = false }
 
 
 [target.'cfg(target_os = "linux")'.dependencies]

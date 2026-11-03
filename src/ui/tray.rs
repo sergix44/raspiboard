@@ -86,7 +86,8 @@ pub fn events() -> impl Stream<Item = Event> {
         };
         let handle = match (Tray { events, icon }).spawn().await {
             Ok(handle) => handle,
-            Err(_) => {
+            Err(error) => {
+                log::warn!(target: "raspiboard::tray", "Tray unavailable: {error}");
                 let _ = output.send(Event::Available(false)).await;
                 return;
             }

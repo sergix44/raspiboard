@@ -42,6 +42,37 @@ not be deleted while the app is running. Locking uses Rust's standard library on
 Unix and Windows and does not require D-Bus. Filesystem or locking errors stop
 startup and report the affected path.
 
+## Application logs
+
+After acquiring the instance lock, `src/main.rs` initializes `src/logging.rs`
+using `Store::logs_directory()`, before starting Iced and its workers. The
+`log` facade and `flexi_logger` write to `~/.raspiboard/logs/raspiboard_rCURRENT.log`.
+Daily rotation and seven-day archive retention are handled by the logger;
+restarting also archives the previous session. Cleanup runs at startup and on
+rotation, using each archive's modification time. A second instance exits before
+initializing logging, so it cannot rotate the running instance's log.
+
+Lines use local time with milliseconds:
+
+```text
+[2026-11-03 09:30:00.123] raspiboard::audio.ERROR: Playback failed
+```
+
+The default filter records application messages at INFO and above, and dependency
+messages at WARN and above. Warnings and errors also appear on stderr. Startup,
+shutdown, audio connection and recording state changes, storage failures,
+waveform failures, hotkey and tray errors, and panics are logged. The panic hook
+also preserves Rust's usual stderr report. `RUST_LOG` overrides the default filter;
+to include audio control commands and other debug diagnostics:
+
+```sh
+RUST_LOG=warn,raspiboard=debug cargo run --locked
+```
+
+Logging tests use isolated directories inside `test-results/logging/` and cover
+formatting, filtering, restart preservation, rotation, age-based cleanup,
+unusable directories, and panic reporting without starting the GUI.
+
 ## Desktop launcher and application icon
 
 Application windows use `img/icon_full.png`, embedded in the binary and decoded

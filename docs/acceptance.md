@@ -54,6 +54,22 @@ Wayland and X11 where available. Build and check packages as described in
    preserved settings, and working playback. Reinstalling the same version is
    not an upgrade test.
 
+## Application logs
+
+1. Run `cargo run --locked` and inspect
+   `~/.raspiboard/logs/raspiboard_rCURRENT.log`. Expect a `Starting Raspiboard`
+   message with the version and lines formatted as
+   `[YYYY-MM-DD HH:MM:SS.mmm] channel.LEVEL: message`.
+2. Try playing an assigned file that has been moved away. Expect the playback
+   error in both the interface and the log. Restore the file after the check.
+3. Quit the app normally. Expect `Raspiboard stopped` in the log. Relaunch and
+   expect the previous session in a timestamped archive and a new current log.
+   Leave the app open across local midnight; its next log message must rotate
+   the previous day's file.
+4. With the app closed, create an expired diagnostic fixture:
+   `touch -d '8 days ago' "$HOME/.raspiboard/logs/raspiboard_r2000-01-01_00-00-00.log"`.
+   Relaunch. Expect that fixture to be removed and recent archives to remain.
+
 ## Single running instance
 
 1. With Raspiboard open, run `cargo run --locked` in another terminal. Expect

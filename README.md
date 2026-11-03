@@ -121,6 +121,8 @@ playback without editing the source.
 
 Settings and sound assignments live in `~/.raspiboard/`. Both package formats
 use that same directory, and uninstalling the `.deb` leaves it intact.
+Application logs live in `~/.raspiboard/logs/`, rotate daily, and are kept for
+seven days.
 To back up your board, close Raspiboard and copy that directory **along with
 your original audio files**. Assignments use absolute paths; moved files need
 to be reassigned through **Replace sound**.

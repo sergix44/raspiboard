@@ -106,6 +106,7 @@ impl Soundboard {
                 }
             }
             Event::Failed { error, .. } => {
+                log::warn!(target: "raspiboard::hotkeys", "{error}");
                 if self.hotkeys.config.configure.is_some() {
                     self.sync_hotkeys(None);
                 } else {
@@ -114,6 +115,7 @@ impl Soundboard {
                 self.hotkeys.error = Some(error);
             }
             Event::ConfigureFailed { error, .. } => {
+                log::warn!(target: "raspiboard::hotkeys", "{error}");
                 self.hotkeys.pending = false;
                 self.hotkeys.error = Some(error);
             }

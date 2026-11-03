@@ -5,6 +5,7 @@ pub const APP_ID: &str = "io.raspiboard.Raspiboard";
 pub mod audio;
 #[cfg(target_os = "linux")]
 pub mod hotkeys;
+pub mod logging;
 pub mod recording;
 pub mod storage;
 pub mod theme;

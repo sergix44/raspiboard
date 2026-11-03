@@ -27,6 +27,7 @@ fn duplicate_launch_exits_before_loading_settings_or_opening_a_window() {
     assert!(String::from_utf8_lossy(&output.stderr).contains("Raspiboard is already running."));
     assert!(!data.join("settings.toml").exists());
     assert!(!data.join("categories").exists());
+    assert!(!data.join("logs").exists());
 }
 
 #[test]

@@ -5,10 +5,13 @@ impl Soundboard {
     pub fn boot() -> Self {
         match Store::in_home() {
             Ok(store) => Self::from_store(store),
-            Err(error) => Self {
-                storage_error: Some(error),
-                ..Self::default()
-            },
+            Err(error) => {
+                log::error!(target: "raspiboard::storage", "{error}");
+                Self {
+                    storage_error: Some(error),
+                    ..Self::default()
+                }
+            }
         }
     }
 
@@ -17,15 +20,21 @@ impl Soundboard {
         let mut board = match store.load_or_create() {
             Ok(saved) => match Writer::start(store) {
                 Ok(writer) => Self::from_saved(saved, Some(writer)),
-                Err(error) => Self {
+                Err(error) => {
+                    log::error!(target: "raspiboard::storage", "{error}");
+                    Self {
+                        storage_error: Some(error),
+                        ..Self::from_saved(saved, None)
+                    }
+                }
+            },
+            Err(error) => {
+                log::error!(target: "raspiboard::storage", "Cannot load saved data: {error}");
+                Self {
                     storage_error: Some(error),
-                    ..Self::from_saved(saved, None)
-                },
-            },
-            Err(error) => Self {
-                storage_error: Some(error),
-                ..Self::default()
-            },
+                    ..Self::default()
+                }
+            }
         };
         board.default_recording_directory = Some(directory);
         board

@@ -1,4 +1,4 @@
-name: package
+name: ci
 
 on:
   push:
@@ -48,7 +48,7 @@ jobs:
             cargo test --release --locked --target x86_64-unknown-linux-gnu --lib --bins
 
   package:
-    name: ${{ matrix.name }}
+    name: package-${{ matrix.name }}
     needs: unit_tests
     strategy:
       fail-fast: false

@@ -47,6 +47,10 @@ with no virtual microphone to select in that application.
 **Supported packages:** x86-64 Linux, Debian 13+ and Ubuntu 26.04+.
 Choose a `.deb` for an installed application or an AppImage for a portable one.
 
+Find automatically built packages in the artifacts of a successful
+[Build Linux packages run](https://github.com/sergix44/raspiboard/actions/workflows/package-linux.yml).
+Extract the downloaded archive before installing or launching a package.
+
 ### Install the `.deb`
 
 From the directory containing the package:

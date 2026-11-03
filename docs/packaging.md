@@ -16,6 +16,29 @@ in the build container. PHP is required for building packages, not running them.
 ./scripts/package-linux
 ```
 
+## Automated builds on GitHub
+
+The **Build Linux packages** workflow runs on every push to `master`, including
+merged pull requests. It can also be started manually from the repository's
+[Actions tab](https://github.com/sergix44/raspiboard/actions/workflows/package-linux.yml)
+using **Run workflow**.
+
+It runs the same PHP packaging command with Docker on an x86-64 Ubuntu runner.
+The compiler and native dependencies still come from the pinned Debian 13 build
+container. Rust tests, formatting, Clippy, package verification, and clean
+Debian/Ubuntu installation checks must pass before packages are uploaded.
+
+Open a successful run and download the `raspiboard-linux-x86_64-<commit>` artifact
+to get the `.deb`, AppImage, and `SHA256SUMS`. Extract the downloaded archive
+before checking its checksums. Artifact downloads do not preserve executable
+permissions; run `chmod +x` on the AppImage before launching it.
+
+Packages are retained for 14 days. Build logs are uploaded separately for 7 days,
+including failed builds. Cargo source downloads are cached between runs;
+compilation outputs are rebuilt. These workflow downloads are not GitHub Releases.
+
+## Local build options
+
 The default is two compilation jobs. Docker and job-count overrides are available:
 
 ```sh

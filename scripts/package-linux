@@ -1,0 +1,126 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+require dirname(__DIR__).'/packaging/linux/common.php';
+
+use function Raspiboard\Packaging\copyTree;
+use function Raspiboard\Packaging\directory;
+use function Raspiboard\Packaging\process;
+
+$json = in_array('--json', $argv, true);
+$root = dirname(__DIR__);
+$engine = 'podman';
+$jobs = '2';
+$stage = 'arguments';
+$log = null;
+
+try {
+    for ($index = 1; $index < $argc; $index++) {
+        switch ($argv[$index]) {
+            case '--engine':
+                $engine = $argv[++$index] ?? '';
+                if (!in_array($engine, ['podman', 'docker'], true)) {
+                    throw new InvalidArgumentException('--engine must be podman or docker', 2);
+                }
+                break;
+            case '--jobs':
+                $jobs = $argv[++$index] ?? '';
+                if (!ctype_digit($jobs) || (int) $jobs < 1) {
+                    throw new InvalidArgumentException('--jobs must be a positive integer', 2);
+                }
+                break;
+            case '--json':
+            case '--plain':
+                break;
+            case '--help':
+                echo "Usage: ./scripts/package-linux [--engine podman|docker] [--jobs N] [--plain|--json]\n";
+                echo "Builds and checks Debian 13 / Ubuntu 26.04 x86-64 packages. Requires PHP 8.2+ and a working container engine.\n";
+                exit(0);
+            default:
+                throw new InvalidArgumentException('Unknown option: '.$argv[$index], 2);
+        }
+    }
+    if (PHP_OS_FAMILY !== 'Linux' || php_uname('m') !== 'x86_64') {
+        throw new RuntimeException('Packaging requires an x86-64 Linux host', 2);
+    }
+    $target = $root.'/target';
+    $downloads = $target.'/packages';
+    if (file_exists($downloads) && !is_link($downloads)) {
+        throw new RuntimeException('target/packages must be absent or a symlink; move the existing directory before packaging', 2);
+    }
+    $run = $target.'/packaging/runs/'.gmdate('Ymd-His').'-'.bin2hex(random_bytes(4));
+    directory($run.'/artifacts');
+    directory($target.'/packaging/cache');
+    $cacheLock = fopen($target.'/packaging/cache.lock', 'c');
+    if ($cacheLock === false || !flock($cacheLock, LOCK_EX | LOCK_NB)) {
+        throw new RuntimeException('Another packaging build is using this checkout; wait for it to finish', 2);
+    }
+    $log = $run.'/build.log';
+    $announce = static function (string $message) use ($json): void {
+        if (!$json) {
+            echo '['.date('Y-m-d H:i:s').'.000] packaging.INFO: '.$message."\n";
+        }
+    };
+    $image = 'localhost/raspiboard-packaging:debian13';
+    $stage = 'container build';
+    $announce('Building Debian 13 tooling; log: '.$log);
+    process([$engine, 'build', '--tag', $image, '--file', $root.'/packaging/linux/Containerfile', $root.'/packaging/linux'], log: $log);
+
+    $stage = 'source snapshot';
+    directory($run.'/source');
+    foreach (['Cargo.toml', 'Cargo.lock', 'LICENSE', 'README.md', 'src', 'assets', 'img', 'vendor', 'tests', 'packaging', 'scripts'] as $name) {
+        copyTree($root.'/'.$name, $run.'/source/'.$name);
+    }
+    $uid = trim(process(['id', '-u'], capture: true));
+    $gid = trim(process(['id', '-g'], capture: true));
+    $stage = 'package build';
+    $announce('Compiling and packaging; logs and debug files: '.$run);
+    $arguments = [$engine, 'run', '--rm'];
+    if ($engine === 'podman') {
+        array_push($arguments, '--userns', 'keep-id');
+    }
+    array_push($arguments, '--user', $uid.':'.$gid,
+        '--volume', $run.'/source:/source:ro', '--volume', $run.':/output',
+        '--volume', $target.'/packaging/cache:/cache',
+        '--env', 'CARGO_HOME=/cache/cargo', '--env', 'CARGO_TARGET_DIR=/cache/target',
+        '--env', 'CARGO_BUILD_JOBS='.$jobs,
+        $image, 'php', '/source/packaging/linux/build.php');
+    process($arguments, log: $log);
+
+    foreach (['docker.io/library/debian:13-slim', 'docker.io/library/ubuntu:26.04'] as $baseline) {
+        $stage = 'baseline check '.$baseline;
+        $announce('Checking install, removal, and portable libraries on '.$baseline);
+        process([$engine, 'run', '--rm', '--volume', $run.':/output:ro',
+            $baseline, 'sh', '-c',
+            'apt-get update && apt-get install -y --no-install-recommends php-cli ca-certificates binutils && php /output/source/packaging/linux/check.php /output/artifacts'], log: $log);
+    }
+    $stage = 'publish local downloads';
+    foreach (['*.deb', '*.AppImage', 'SHA256SUMS'] as $pattern) {
+        if (count(glob($run.'/artifacts/'.$pattern)) !== 1) {
+            throw new RuntimeException('Expected exactly one '.$pattern.' in the verified output');
+        }
+    }
+    $link = $target.'/.packages-'.bin2hex(random_bytes(4));
+    if (!symlink(substr($run.'/artifacts', strlen($target) + 1), $link) || !rename($link, $downloads)) {
+        throw new RuntimeException('Could not update target/packages');
+    }
+    $result = ['status' => 'ok', 'directory' => $downloads, 'log' => $log, 'files' => array_map('basename', glob($downloads.'/*'))];
+    if ($json) {
+        echo json_encode($result, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n";
+    } else {
+        $announce('Packages ready: '.$downloads);
+        foreach ($result['files'] as $file) {
+            echo '  '.$file."\n";
+        }
+    }
+} catch (Throwable $error) {
+    $status = $error->getCode() > 0 && $error->getCode() < 256 ? $error->getCode() : 1;
+    if ($json) {
+        echo json_encode(['status' => 'error', 'stage' => $stage, 'message' => $error->getMessage(), 'log' => $log], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n";
+    } else {
+        fwrite(STDERR, '['.date('Y-m-d H:i:s').'.000] packaging.ERROR: '.$stage.': '.$error->getMessage()."\n");
+    }
+    exit($status);
+}

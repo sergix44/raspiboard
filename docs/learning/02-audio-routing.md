@@ -1,0 +1,279 @@
+# PipeWire and the audio worker
+
+The audio path is:
+
+```mermaid
+flowchart LR
+    File[Audio file] --> Decoder[Decoder thread]
+    Decoder --> RemoteQueue[Remote sample queue]
+    Decoder --> LocalQueue[Local sample queue]
+    RemoteQueue --> RemoteStream[Remote playback stream]
+    RemoteStream --> Sink[Private clip sink]
+    Sink --> App[Selected recording app]
+    Microphone[Existing microphone] --> App
+    LocalQueue --> LocalStream[Local playback stream]
+    LocalStream --> Desktop[Desktop output]
+```
+
+The private sink is an internal audio endpoint, not a microphone you select in
+your chat application. Its output is connected to the input ports of the selected
+recording stream. PipeWire combines the inputs there. A second playback stream
+sends the same clip to the desktop's default output with its own volume. With
+None selected, only that local stream and sample queue are created; there is no
+private sink or remote output.
+
+## Modules and responsibilities
+
+| Module in `src/audio/` | Responsibility |
+| --- | --- |
+| `mod.rs` | Public commands, snapshots, controller, and iced event subscription. |
+| `backend.rs` | PipeWire connection, reconnection, selection, concurrent sessions and group controls. |
+| `session.rs` | One instance's decoder, output readiness, pause state, drain and cleanup. |
+| `discovery.rs` | Subscribe to native node, port, and link information. |
+| `graph.rs` | Interpret that information and find microphone paths and matching channels. |
+| `decode.rs` | Read audio packets and convert decoded samples to floating-point values with Symphonia. |
+| `job.rs` | Decode once on a worker and feed bounded remote and local sample queues. |
+| `buffer.rs` | Fill playback buffers, apply volume, and handle missing samples without waiting. |
+| `route.rs` | Own the private sink and links to the chosen application's input ports. |
+| `player.rs` | Configure a remote or local playback stream and supply its audio buffers. |
+
+`src/lib.rs` exposes the audio domain to the executable. Keeping it separate from
+the interface also allows its tests to run without opening a window.
+
+## Tasks and subscriptions in iced
+
+`update` returns `Task<Message>`. Most messages return `Task::none()` because
+they only change state or send a command. Choosing Replace sound from the pad menu returns a task
+that awaits the native file dialog and sends `AudioChosen` with the result. Awaiting
+releases the interface executor to do other work; it does not freeze the window.
+
+`subscription` uses `Subscription::run(audio::events)` to receive ongoing events.
+`Ready` supplies a `Controller`; `Changed` supplies an audio `Snapshot`. The worker
+is the authority on available destinations and playback status. The interface
+displays snapshots and sends commands, rather than guessing whether a connection
+or playback operation succeeded.
+
+`Option<T>` represents a value that may be absent: no destination is `None`, while
+a chosen destination is `Some(target)`. `Result<T, String>` represents success or
+an error. The `?` operator returns an error to the caller early, so a failed
+connection can become a visible message instead of a panic.
+
+## Why PipeWire has its own thread
+
+PipeWire's event loop waits for server messages and dispatches callbacks. Running
+it on the interface thread would prevent iced from processing its own events.
+Native PipeWire objects also cannot simply be sent between threads. Rust models
+that restriction through the `Send` and `Sync` traits.
+
+The audio worker creates and keeps all native objects on one thread. A bounded
+command channel carries Play, Preview, Pause, Resume, Stop, Select, and SetVolumes requests into it. Play
+carries an optional target; None is accepted only when the confirmed selection
+is also None. It also captures the button ID and overlap flag. Preview carries the
+button ID but always runs exclusively and locally. A stale local or remote request
+cannot use a changed selection. A timer checks commands every 25 milliseconds and publishes changed snapshots.
+Sending a command uses `try_send`, so the interface never waits for a full queue.
+
+The worker uses `Rc<T>` for shared ownership within its thread. `RefCell<T>` allows
+callbacks to change shared state while checking borrowing rules at runtime. A
+conflicting borrow would panic, so each borrow is kept short and released before
+another callback runs. Weak references let callbacks refer to their event loop
+without creating an ownership cycle that would keep it alive forever.
+
+## Discovering applications without a whitelist
+
+The PipeWire registry reports objects that already exist and later additions or
+removals. Listeners also track changes to their properties. The graph stores:
+
+- Nodes: devices, filters, and application streams.
+- Ports: a node's individual audio inputs and outputs.
+- Links: connections from an output port to an input port.
+
+Recording streams use `media.class = Stream/Input/Audio`. Raspiboard traces their
+incoming links backwards to find a physical audio source. A visited set prevents
+cycles from making this search loop forever. It excludes its own nodes and known
+desktop-monitor-only paths; an unresolved source is labelled rather than guessed.
+
+A filtered virtual microphone may expose ports marked as monitors. Those ports
+still carry microphone audio. The discovery code therefore considers the source
+node's class and upstream links, not the port name alone. A sanitized fixture
+from a real effects-chain graph tests this case without requiring EasyEffects.
+
+Each destination carries both a node ID and an object serial. IDs can be reused
+when objects disappear. Comparing the serial as well prevents an old selection
+from matching a newly created stream with the same ID. Closing the selected
+recording stream clears the selection and stops playback.
+
+On each PipeWire connection, `Engine::refresh_targets` selects the first available
+target in the graph's node-ID order once discovery returns a nonempty list.
+Selection alone does not start playback. The engine records that initialization
+so later discovery updates do not override the choice. An explicit Select command,
+including None before any applications appear, also completes initialization.
+Starting a clip with no target fixes the selection to None as well, so discovering
+an application cannot change the destination of an already local-only clip.
+Losing the selected stream leaves None selected rather than choosing a replacement.
+
+## Per-sound gain and crop
+
+`Command::Play` snapshots the pad's `PlaybackOptions`. Name/color changes affect
+appearance immediately, while gain and crop wait until the next Play. Decoding
+counts source frames so Start is inclusive and End exclusive, even across packet
+boundaries. Cropped playback first checks the requested bounds and then reopens
+the decoder; this uses bounded memory but adds decoding work for long offsets.
+Default playback skips that scan. Cancellation remains active throughout scanning,
+and routing's timeout starts once decoded outputs are ready to connect.
+
+Crop start/end are in milliseconds; frame boundaries round up to the first frame
+in the interval. The displayed rounded final millisecond is accepted and clamped
+to EOF. Fades operate on the selected audio, preserving smooth transitions.
+Relative dB gain becomes an amplitude multiplier carried to both output feeds.
+The callback multiplies clip, master and transition gains before clamping final
+samples, so a quiet master does not clip a boosted intermediate sample.
+
+`audio/waveform.rs` uses the same codec registry for background analysis. It
+compacts peaks incrementally to at most 2048 bins and counts decoded frames for
+duration, keeping memory bounded without retaining the whole clip.
+
+## Decoding without blocking playback
+
+Symphonia enables all built-in codecs and containers and probes the file content, using its extension as a hint. A shared codec registry also registers `symphonia-adapter-libopus` for Opus audio; it follows the same packet, sample, fade, and pause path as built-in codecs. The first decoded packet establishes the sample rate and channels, including formats whose headers omit them. `ClipDecoder` accepts mono or
+stereo audio and reports the sample rate. Samples become `f32` values, where
+ordinary full-scale audio lies between -1 and 1. Mono frames are duplicated into
+left and right channels. PipeWire's adapters perform sample-rate conversion and
+mix stereo down to mono when the destination requires it.
+
+Decoding happens on a separate thread because file reads can take unpredictable
+amounts of time. The `rtrb` crate provides a fixed-size queue of 16,384 stereo
+frames for each active output: always local, and remote only when an application
+is selected. At 48,000 frames per second, each holds about a third of a second.
+The decoder sends each frame to the active queues in order, bounding memory use
+without loading or decoding the entire clip twice. Local-only playback never
+allocates an unused remote queue that could fill and stall decoding. Only the
+decoder waits when a queue is full; playback callbacks never wait. Cancellation
+interrupts that wait even when one output stops consuming.
+
+`SampleFeed::render` copies available frames into PipeWire's buffer and applies
+that output's volume. Streams initially supply silence while PipeWire negotiates
+connections. Samples remain queued until the local stream is streaming and any
+remote links are active; failed links report their error and incomplete
+startup has a ten-second timeout. This lets negotiation proceed without consuming
+the beginning of the clip. Local playback uses session-manager automatic linking
+to the desktop output, while remote playback names its private sink explicitly.
+The local stream and private sinks share a `node.link-group` to prevent automatic
+local linking to a remote sink; the remote stream is outside that group. See
+[PipeWire session-manager properties](https://docs.pipewire.org/page_man_pipewire-props_7.html)
+for the native targeting and link-group properties.
+
+Pause requests a 5 ms fade on each active output, then callbacks supply silence
+without consuming queued frames. Resume reverses that envelope and continues at
+the held position. Decoding may fill the bounded queues while paused, then waits
+for consumption or cancellation. Stop takes priority over pause and can complete
+without consuming another frame when already silent. Pause applies to every session when the group is playing, including sessions still
+loading; it is ignored when the entire group is loading. A session whose output
+has finished is allowed to drain instead of pausing. New output callbacks inherit
+the session's pause flag, so a pending session cannot become audible after Pause.
+Starting another overlapping pad resumes a paused group before adding the new session.
+
+An empty queue produces silence until more samples arrive. At the
+end of a file, playback drains every active stream before removing its links.
+The producer applies 5 ms fades to the beginning and end, retaining only the final
+5 ms until EOF is known. Frame count and source files are unchanged.
+Stop and replacement signal a separate 5 ms callback fade. The engine retains
+outgoing streams and their routes until they drain, with a three-second cleanup
+limit for disconnected outputs. New playback can prepare while the old stream drains.
+Readiness, errors, completion, and draining inspect only outputs that exist;
+local-only playback never waits for a remote stream. If an active output fails,
+its instance stops and reports an error while unrelated instances continue.
+A PipeWire connection failure or loss of the selected app stops the whole group.
+Core error events carry the affected proxy ID. Only errors for the core itself
+fail the connection; owned sink and link errors are handled by their session's
+proxy listeners, avoiding cancellation of unrelated instances.
+Non-finite samples are silenced, and samples outside the normal range are clipped.
+
+`Arc<T>` provides shared ownership across threads. Atomic values communicate
+the two independent gains, cancellation, and completion without locking audio
+callbacks. Acquire and Release ordering ensure completion is observed after the
+producer's preceding work; the volume only needs Relaxed ordering because it is an independent value.
+The callback checks end-of-file before reading the queue. Checking it after an
+empty read would race with the producer adding its final frame and announcing
+completion, potentially discarding that frame. A concurrent regression test
+exercises that boundary.
+
+## Ownership and cleanup
+
+Rust drops owned values when their scope ends or their owner replaces them.
+The playback object owns the local stream and an optional remote player/route,
+including its sink, listeners, and links.
+Stop or changing destination moves active playback into the retiring list until
+its short fade has drained, then drops those objects. The decoder job's `Drop`
+implementation signals cancellation so its thread exits even if the sample queue is full.
+
+Listeners must remain alive while their callbacks are needed. Their fields appear
+before the associated native objects so the listeners are removed first when the
+owner is dropped. Server objects use `object.linger = false`, so they do not remain
+after the owning client disconnects. Raspiboard never deletes existing microphone
+links or changes the system's default input device.
+
+If PipeWire disconnects, the worker retries with a fresh graph and selects the
+first available destination again. It never resumes the previous clip automatically.
+
+## What the tests establish
+
+Tests exercise discovery and audio processing without a live server: direct and
+filtered microphone paths, monitor exclusion, channel mapping, partial stereo
+connections, failed negotiation, reused IDs, stale Play commands, repeated
+destination selection, PCM decoding, ordered dual-output delivery, independent
+gains, cancellation with a full queue, silence on buffer exhaustion, and concurrent
+end-of-file behavior. Interface tests also cover volume linking and file assignment.
+They cannot establish what another application actually receives or what the
+desktop output plays. Those remain the manual acceptance checks.
+
+
+Options preview sends `Command::Preview` with the valid current crop draft and
+saved relative gain. It shares the normal decoder and stream lifecycle but creates
+only a local output; it neither requires nor changes the selected recording target.
+The Options footer follows the matching preview instance, including loading and
+paused states, so Stop remains available even after a draft becomes invalid.
+Ordinary pad playback is not treated as an Options preview.
+
+
+## Concurrent instances and group controls
+
+`Engine` keeps a collection of `Session` values. Every accepted Play creates a new
+session with its own decoder, queues and local stream, plus a separate remote
+stream and uniquely named route when a recording app is selected. The existing
+PipeWire mixing path combines these streams at their destinations. Output master
+volume atomics are shared across sessions; each instance retains its own crop and gain.
+
+With overlap disabled, Play cancels all sessions before creating the replacement.
+With overlap enabled, pending and active sessions remain alive. Preview replaces
+the group, and normal pad playback replaces a preview even when overlap is enabled.
+Stop, Select and opening the file picker cancel every pending decoder and use the
+existing outgoing fade for every active stream. Completed or failed sessions are
+removed individually; their neighbors retain their decoder and pause state.
+
+Snapshots carry each instance's button ID, status and preview flag. The aggregate
+footer state is Playing if any instance is playing, otherwise Paused if any is
+paused, otherwise Loading if any is pending, and Idle only when none remain.
+Several copies of one pad therefore keep it illuminated until its last playing
+copy finishes. The collection stores independent instances even when several Play
+commands arrive before the first decoder or route is ready.
+
+## Platform boundary
+
+The UI uses `audio::Controller`, commands and snapshot events. Targets carry an
+opaque identity and backend-provided display and descriptive labels; the UI does
+not interpret native node identifiers. `APP_ID` belongs to the crate root.
+
+The Linux implementation lives in `audio/backend/pipewire`. It owns discovery,
+routing, streams, session orchestration, draining and reconnection. Native target
+identities include both node ID and object serial and are resolved against the
+current graph before routing. Decoding, sample buffers, playback options and
+waveforms remain shared. A future microphone backend can expose a destination
+without exposing a PipeWire graph or implementing its stream lifecycle.
+
+Global shortcut contracts remain in `hotkeys`; the Linux portal implementation
+owns D-Bus sessions, assignment conversion and activation ordering. Stored trigger
+text is a display description, not a platform-independent key binding.
+
+Backend selection and direct platform dependencies are compile-time Linux-only.
+Other operating systems are explicitly unsupported until their services exist.

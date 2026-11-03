@@ -1,0 +1,27 @@
+FROM docker.io/library/rust:1.97.0-slim-trixie@sha256:1ac626cf2baacc6c87631f4c224391d7f5b3d3e6ba16b1c0f640232d7db172c8
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential cmake pkg-config clang libclang-dev \
+    libpipewire-0.3-dev libspa-0.2-dev libpipewire-0.3-modules \
+    libspa-0.2-modules pipewire-bin libwayland-client0 libwayland-cursor0 libwayland-egl1 \
+    libxkbcommon0 libxkbcommon-x11-0 libx11-6 libx11-xcb1 libxcursor1 \
+    libxi6 libxrandr2 libxrender1 libxfixes3 libxinerama1 libegl1 libgl1 \
+    libvulkan1 ca-certificates curl php-cli imagemagick dpkg-dev \
+    desktop-file-utils patchelf file lintian squashfs-tools zstd \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY tools.json /opt/packaging/tools.json
+COPY install-tools.php /opt/packaging/install-tools.php
+RUN php /opt/packaging/install-tools.php
+RUN cd /opt/downloads && tar xf cargo-deb.crate \
+    && cargo install --locked --path cargo-deb-3.7.0 \
+    && mkdir /opt/linuxdeploy /opt/appimagetool \
+    && chmod +x linuxdeploy.AppImage appimagetool.AppImage runtime-x86_64 \
+    && cd /opt/linuxdeploy && /opt/downloads/linuxdeploy.AppImage --appimage-extract >/dev/null \
+    && cd /opt/appimagetool && /opt/downloads/appimagetool.AppImage --appimage-extract >/dev/null \
+    && chmod -R a+rX /opt/linuxdeploy /opt/appimagetool \
+    && rustup component add clippy rustfmt \
+    && rustc --version && cargo deb --version
+
+ENV PATH="/opt/linuxdeploy/squashfs-root/usr/bin:/opt/appimagetool/squashfs-root/usr/bin:${PATH}"
+WORKDIR /work

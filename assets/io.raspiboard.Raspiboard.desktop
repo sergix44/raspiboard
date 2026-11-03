@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Raspiboard
+Comment=Play sound clips locally and into recording applications
+Exec=raspiboard
+Icon=io.raspiboard.Raspiboard
+Terminal=false
+Categories=AudioVideo;Audio;
+StartupWMClass=io.raspiboard.Raspiboard

@@ -1,0 +1,29 @@
+#!/bin/sh
+set -eu
+
+appdir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)
+export LD_LIBRARY_PATH="$appdir/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+export PIPEWIRE_MODULE_DIR="${PIPEWIRE_MODULE_DIR:-$appdir/usr/lib/pipewire-0.3}"
+export SPA_PLUGIN_DIR="${SPA_PLUGIN_DIR:-$appdir/usr/lib/spa-0.2}"
+
+# Forcing a config directory also disables PipeWire's ordinary user drop-ins.
+if [ -z "${PIPEWIRE_CONFIG_DIR+x}${PIPEWIRE_CONFIG_NAME+x}${PIPEWIRE_CONFIG_PREFIX+x}" ]; then
+    home=${HOME:-}
+    if [ -z "$home" ]; then
+        home=$(getent passwd "$(id -u)" | cut -d: -f6)
+    fi
+    host_config=false
+    for config in "${XDG_CONFIG_HOME:-$home/.config}/pipewire/client.conf" \
+        "$home/.config/pipewire/client.conf" \
+        /etc/pipewire/client.conf /usr/share/pipewire/client.conf; do
+        if [ -r "$config" ]; then
+            host_config=true
+            break
+        fi
+    done
+    if [ "$host_config" = false ]; then
+        export PIPEWIRE_CONFIG_DIR="$appdir/usr/share/pipewire"
+    fi
+fi
+
+exec "$appdir/usr/bin/raspiboard" "$@"

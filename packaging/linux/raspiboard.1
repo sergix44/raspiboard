@@ -1,0 +1,29 @@
+.TH RASPIBOARD 1 "November 2026" "Raspiboard" "User Commands"
+.SH NAME
+raspiboard \- play sound clips locally and into recording applications
+.SH SYNOPSIS
+.B raspiboard
+.SH DESCRIPTION
+Raspiboard is a desktop soundboard using PipeWire for local playback and
+routing clips alongside a recording application's microphone input.
+Sound options include volume, cropping, overlapping playback, and global
+shortcuts managed by the desktop portal.
+.PP
+Run Raspiboard in a graphical desktop session with PipeWire and a session
+manager running. File dialogs require a desktop portal backend. Global
+shortcuts require a backend implementing the Global Shortcuts portal.
+.SH FILES
+.TP
+.I ~/.raspiboard/settings.toml
+Saved application settings.
+.TP
+.I ~/.raspiboard/categories/
+Saved sound assignments and options. Original audio files remain in their
+original locations.
+.TP
+.I ~/.raspiboard/instance.lock
+Single-instance lock. Do not delete this file while the application is running.
+.SH AUTHOR
+Sergio Brighenti <sergio@brighenti.me>.
+.SH COPYRIGHT
+Copyright 2026 Sergio Brighenti. Licensed under GNU GPL version 3.

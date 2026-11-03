@@ -1,0 +1,527 @@
+[
+  {
+    "id": 59,
+    "kind": "Node",
+    "props": {
+      "application.id": "com.github.wwmm.easyeffects",
+      "media.class": "Audio/Source/Virtual",
+      "object.serial": "59"
+    }
+  },
+  {
+    "id": 69,
+    "kind": "Node",
+    "props": {
+      "device.id": "56",
+      "media.class": "Audio/Source",
+      "object.serial": "74"
+    }
+  },
+  {
+    "id": 76,
+    "kind": "Port",
+    "props": {
+      "audio.channel": "FL",
+      "node.id": "59",
+      "object.serial": "81",
+      "port.direction": "out",
+      "port.monitor": "true"
+    }
+  },
+  {
+    "id": 77,
+    "kind": "Port",
+    "props": {
+      "audio.channel": "FR",
+      "node.id": "59",
+      "object.serial": "82",
+      "port.direction": "out",
+      "port.monitor": "true"
+    }
+  },
+  {
+    "id": 96,
+    "kind": "Node",
+    "props": {
+      "application.id": "com.github.wwmm.easyeffects",
+      "object.serial": "101"
+    }
+  },
+  {
+    "id": 99,
+    "kind": "Port",
+    "props": {
+      "audio.channel": "FL",
+      "node.id": "96",
+      "object.serial": "104",
+      "port.direction": "out"
+    }
+  },
+  {
+    "id": 100,
+    "kind": "Port",
+    "props": {
+      "audio.channel": "FR",
+      "node.id": "96",
+      "object.serial": "105",
+      "port.direction": "out"
+    }
+  },
+  {
+    "id": 103,
+    "kind": "Node",
+    "props": {
+      "application.id": "com.github.wwmm.easyeffects",
+      "object.serial": "108"
+    }
+  },
+  {
+    "id": 106,
+    "kind": "Port",
+    "props": {
+      "audio.channel": "FL",
+      "node.id": "103",
+      "object.serial": "111",
+      "port.direction": "out"
+    }
+  },
+  {
+    "id": 107,
+    "kind": "Port",
+    "props": {
+      "audio.channel": "FR",
+      "node.id": "103",
+      "object.serial": "112",
+      "port.direction": "out"
+    }
+  },
+  {
+    "id": 108,
+    "kind": "Port",
+    "props": {
+      "audio.channel": "FL",
+      "node.id": "69",
+      "object.serial": "113",
+      "port.direction": "out"
+    }
+  },
+  {
+    "id": 109,
+    "kind": "Port",
+    "props": {
+      "audio.channel": "FR",
+      "node.id": "69",
+      "object.serial": "114",
+      "port.direction": "out"
+    }
+  },
+  {
+    "id": 178,
+    "kind": "Node",
+    "props": {
+      "media.class": "Stream/Input/Audio",
+      "object.serial": "294",
+      "application.name": "Fixture recorder"
+    }
+  },
+  {
+    "id": 180,
+    "kind": "Link",
+    "props": {
+      "link.input.node": "178",
+      "link.input.port": "176",
+      "link.output.node": "59",
+      "link.output.port": "76",
+      "object.serial": "299"
+    }
+  },
+  {
+    "id": 183,
+    "kind": "Link",
+    "props": {
+      "link.input.node": "178",
+      "link.input.port": "181",
+      "link.output.node": "59",
+      "link.output.port": "77",
+      "object.serial": "300"
+    }
+  },
+  {
+    "id": 188,
+    "kind": "Node",
+    "props": {
+      "application.id": "com.github.wwmm.easyeffects",
+      "object.serial": "301"
+    }
+  },
+  {
+    "id": 195,
+    "kind": "Port",
+    "props": {
+      "audio.channel": "FL",
+      "node.id": "188",
+      "object.serial": "304",
+      "port.direction": "out"
+    }
+  },
+  {
+    "id": 187,
+    "kind": "Port",
+    "props": {
+      "audio.channel": "FR",
+      "node.id": "188",
+      "object.serial": "305",
+      "port.direction": "out"
+    }
+  },
+  {
+    "id": 184,
+    "kind": "Link",
+    "props": {
+      "link.input.node": "188",
+      "link.input.port": "186",
+      "link.output.node": "69",
+      "link.output.port": "108",
+      "object.serial": "306"
+    }
+  },
+  {
+    "id": 190,
+    "kind": "Link",
+    "props": {
+      "link.input.node": "188",
+      "link.input.port": "189",
+      "link.output.node": "69",
+      "link.output.port": "109",
+      "object.serial": "307"
+    }
+  },
+  {
+    "id": 198,
+    "kind": "Node",
+    "props": {
+      "application.id": "com.github.wwmm.easyeffects",
+      "object.serial": "308"
+    }
+  },
+  {
+    "id": 196,
+    "kind": "Port",
+    "props": {
+      "audio.channel": "FL",
+      "node.id": "198",
+      "object.serial": "313",
+      "port.direction": "out"
+    }
+  },
+  {
+    "id": 194,
+    "kind": "Port",
+    "props": {
+      "audio.channel": "FR",
+      "node.id": "198",
+      "object.serial": "314",
+      "port.direction": "out"
+    }
+  },
+  {
+    "id": 185,
+    "kind": "Link",
+    "props": {
+      "link.input.node": "198",
+      "link.input.port": "197",
+      "link.output.node": "188",
+      "link.output.port": "195",
+      "object.serial": "315"
+    }
+  },
+  {
+    "id": 143,
+    "kind": "Link",
+    "props": {
+      "link.input.node": "198",
+      "link.input.port": "192",
+      "link.output.node": "188",
+      "link.output.port": "187",
+      "object.serial": "316"
+    }
+  },
+  {
+    "id": 142,
+    "kind": "Node",
+    "props": {
+      "application.id": "com.github.wwmm.easyeffects",
+      "object.serial": "317"
+    }
+  },
+  {
+    "id": 158,
+    "kind": "Port",
+    "props": {
+      "audio.channel": "FL",
+      "node.id": "142",
+      "object.serial": "320",
+      "port.direction": "out"
+    }
+  },
+  {
+    "id": 111,
+    "kind": "Port",
+    "props": {
+      "audio.channel": "FR",
+      "node.id": "142",
+      "object.serial": "321",
+      "port.direction": "out"
+    }
+  },
+  {
+    "id": 155,
+    "kind": "Link",
+    "props": {
+      "link.input.node": "142",
+      "link.input.port": "137",
+      "link.output.node": "198",
+      "link.output.port": "196",
+      "object.serial": "322"
+    }
+  },
+  {
+    "id": 156,
+    "kind": "Link",
+    "props": {
+      "link.input.node": "142",
+      "link.input.port": "136",
+      "link.output.node": "198",
+      "link.output.port": "194",
+      "object.serial": "323"
+    }
+  },
+  {
+    "id": 114,
+    "kind": "Node",
+    "props": {
+      "application.id": "com.github.wwmm.easyeffects",
+      "object.serial": "324"
+    }
+  },
+  {
+    "id": 138,
+    "kind": "Port",
+    "props": {
+      "audio.channel": "FL",
+      "node.id": "114",
+      "object.serial": "329",
+      "port.direction": "out"
+    }
+  },
+  {
+    "id": 141,
+    "kind": "Port",
+    "props": {
+      "audio.channel": "FR",
+      "node.id": "114",
+      "object.serial": "330",
+      "port.direction": "out"
+    }
+  },
+  {
+    "id": 139,
+    "kind": "Link",
+    "props": {
+      "link.input.node": "114",
+      "link.input.port": "157",
+      "link.output.node": "142",
+      "link.output.port": "158",
+      "object.serial": "331"
+    }
+  },
+  {
+    "id": 135,
+    "kind": "Link",
+    "props": {
+      "link.input.node": "114",
+      "link.input.port": "115",
+      "link.output.node": "142",
+      "link.output.port": "111",
+      "object.serial": "332"
+    }
+  },
+  {
+    "id": 133,
+    "kind": "Node",
+    "props": {
+      "application.id": "com.github.wwmm.easyeffects",
+      "object.serial": "333"
+    }
+  },
+  {
+    "id": 150,
+    "kind": "Port",
+    "props": {
+      "audio.channel": "FL",
+      "node.id": "133",
+      "object.serial": "338",
+      "port.direction": "out"
+    }
+  },
+  {
+    "id": 144,
+    "kind": "Port",
+    "props": {
+      "audio.channel": "FR",
+      "node.id": "133",
+      "object.serial": "339",
+      "port.direction": "out"
+    }
+  },
+  {
+    "id": 116,
+    "kind": "Link",
+    "props": {
+      "link.input.node": "133",
+      "link.input.port": "129",
+      "link.output.node": "114",
+      "link.output.port": "138",
+      "object.serial": "340"
+    }
+  },
+  {
+    "id": 112,
+    "kind": "Link",
+    "props": {
+      "link.input.node": "133",
+      "link.input.port": "134",
+      "link.output.node": "114",
+      "link.output.port": "141",
+      "object.serial": "341"
+    }
+  },
+  {
+    "id": 153,
+    "kind": "Link",
+    "props": {
+      "link.input.node": "103",
+      "link.input.port": "104",
+      "link.output.node": "133",
+      "link.output.port": "150",
+      "object.serial": "342"
+    }
+  },
+  {
+    "id": 117,
+    "kind": "Link",
+    "props": {
+      "link.input.node": "103",
+      "link.input.port": "105",
+      "link.output.node": "133",
+      "link.output.port": "144",
+      "object.serial": "343"
+    }
+  },
+  {
+    "id": 149,
+    "kind": "Link",
+    "props": {
+      "link.input.node": "96",
+      "link.input.port": "97",
+      "link.output.node": "103",
+      "link.output.port": "106",
+      "object.serial": "344"
+    }
+  },
+  {
+    "id": 148,
+    "kind": "Link",
+    "props": {
+      "link.input.node": "96",
+      "link.input.port": "98",
+      "link.output.node": "103",
+      "link.output.port": "107",
+      "object.serial": "345"
+    }
+  },
+  {
+    "id": 118,
+    "kind": "Link",
+    "props": {
+      "link.input.node": "59",
+      "link.input.port": "74",
+      "link.output.node": "96",
+      "link.output.port": "99",
+      "object.serial": "346"
+    }
+  },
+  {
+    "id": 145,
+    "kind": "Link",
+    "props": {
+      "link.input.node": "59",
+      "link.input.port": "75",
+      "link.output.node": "96",
+      "link.output.port": "100",
+      "object.serial": "347"
+    }
+  },
+  {
+    "id": 251,
+    "kind": "Node",
+    "props": {
+      "media.class": "Stream/Input/Audio",
+      "object.serial": "448",
+      "application.name": "Fixture recorder"
+    }
+  },
+  {
+    "id": 239,
+    "kind": "Link",
+    "props": {
+      "link.input.node": "251",
+      "link.input.port": "233",
+      "link.output.node": "59",
+      "link.output.port": "76",
+      "object.serial": "453"
+    }
+  },
+  {
+    "id": 234,
+    "kind": "Link",
+    "props": {
+      "link.input.node": "251",
+      "link.input.port": "237",
+      "link.output.node": "59",
+      "link.output.port": "77",
+      "object.serial": "454"
+    }
+  },
+  {
+    "id": 244,
+    "kind": "Node",
+    "props": {
+      "media.class": "Stream/Input/Audio",
+      "object.serial": "461",
+      "application.name": "Fixture recorder"
+    }
+  },
+  {
+    "id": 257,
+    "kind": "Link",
+    "props": {
+      "link.input.node": "244",
+      "link.input.port": "253",
+      "link.output.node": "59",
+      "link.output.port": "76",
+      "object.serial": "466"
+    }
+  },
+  {
+    "id": 258,
+    "kind": "Link",
+    "props": {
+      "link.input.node": "244",
+      "link.input.port": "254",
+      "link.output.node": "59",
+      "link.output.port": "77",
+      "object.serial": "467"
+    }
+  }
+]

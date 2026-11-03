@@ -1,0 +1,54 @@
+[package]
+name = "raspiboard"
+version = "0.1.0"
+edition = "2024"
+description = "Desktop clip player and sound router"
+authors = ["Sergio Brighenti <sergio@brighenti.me>"]
+license = "GPL-3.0-only"
+readme = "README.md"
+publish = false
+
+[package.metadata.deb]
+maintainer = "Sergio Brighenti <sergio@brighenti.me>"
+copyright = "2026 Sergio Brighenti"
+section = "sound"
+priority = "optional"
+extended-description = "A desktop soundboard that plays clips locally and routes them into recording applications through PipeWire. Includes per-sound volume, cropping, overlapping playback, and desktop-managed global shortcuts."
+depends = "$auto, libpipewire-0.3-0t64 (>= 0.3.65), libwayland-client0, libwayland-cursor0, libwayland-egl1, libxkbcommon0, libxkbcommon-x11-0, libx11-6, libx11-xcb1, libxcursor1, libxi6, libxrandr2, libxrender1, libxfixes3, libxinerama1, libegl1, libgl1, libvulkan1, xdg-desktop-portal"
+assets = [
+    ["target/release/raspiboard", "usr/bin/raspiboard", "755"],
+    ["assets/io.raspiboard.Raspiboard.desktop", "usr/share/applications/", "644"],
+    ["target/package-assets/icons/**/*.png", "usr/share/icons/hicolor/", "644"],
+    ["target/package-assets/notices/*", "usr/share/doc/raspiboard/", "644"],
+    ["LICENSE", "usr/share/doc/raspiboard/LICENSE", "644"],
+    ["packaging/linux/raspiboard.1", "usr/share/man/man1/raspiboard.1", "644"],
+]
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+debug = "line-tables-only"
+
+[dependencies]
+iced = { version = "0.14.0", features = ["advanced", "canvas"] }
+iced_aw = { version = "0.14.1", path = "vendor/iced_aw", default-features = false, features = ["color_picker", "number_input"] }
+async-channel = "2.5"
+rfd = "0.17.2"
+rtrb = "0.4.1"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.150"
+symphonia = { version = "0.6.1", default-features = false, features = ["all", "opt-simd"] }
+symphonia-adapter-libopus = "0.3.0"
+tempfile = "3.27"
+toml = "1.1.8"
+uuid = { version = "1.29.0", features = ["v7"] }
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+
+[target.'cfg(target_os = "linux")'.dependencies]
+ashpd = { version = "0.13.13", default-features = false, features = ["async-io", "global_shortcuts"] }
+pipewire = { version = "0.10.1", features = ["v0_3_65"] }
+zbus = { version = "5.19", default-features = false, features = ["async-io"] }
+
+[patch.crates-io]
+winit = { path = "vendor/winit" }

@@ -126,7 +126,7 @@ playback state and the confirmed target.
 Opening or closing Settings uses iced window tasks. `ThemeChanged`
 replaces the optional override, which iced reads through the application theme
 callback on the next update. Selecting a theme applies it immediately; Close
-retains it, and Use default sends `ThemeChanged(None)`. Theme changes queue a
+retains it, and Default theme sends `ThemeChanged(ThemeChoice::Deck)`. Theme changes queue a
 settings save. `subscription` batches the existing audio stream with native
 window-close events and an Escape-key listener carrying the originating window
 ID. Escape closes Settings only from Settings, or dismisses the grid menu from
@@ -209,15 +209,16 @@ The `!` marks a macro, which generates code from its inputs. A horizontal space
 with `Fill` pushes the application selector and Settings cog to the right. The main area
 also uses `Fill` so the controls stay at the bottom as the window grows.
 
-`src/ui/icons.rs` owns the icon font family, embedded bytes, and the five glyph
-mappings for Play, Stop, linked, unlinked, and Settings. Its text helper renders
+`src/ui/icons.rs` owns the icon font family, embedded bytes, and glyph mappings
+for transport, recording, passthrough and other controls. Its text helper renders
 Lucide glyphs without changing the application's monospace text font. Play and
-Stop use 28-pixel icons on 64×64 surfaces; Settings uses a 16-pixel icon on a
-32×32 surface. The 24×24 link control has a 16-pixel icon and a transparent style
+Stop use 28-pixel icons on 64×64 surfaces; Settings uses a 28-pixel icon on a
+64×64 surface. The 24×24 link control has a 16-pixel icon and a transparent style
 in every state. Its glyph and accent text color signal linking.
 `sound_pad::raised` shares the pad renderer with transport controls: Play uses the
-theme's success palette and Stop its danger palette, retaining muted colors when
-disabled. Settings and Settings actions use the accent palette.
+theme's success palette and Stop a light-blue pair, retaining muted colors when
+disabled. Record uses the danger palette and the same one-second blinking
+widget as passthrough. Settings and Settings actions use the accent palette.
 The main layout uses 12-pixel content/footer margins and footer gaps; the native application
 selector is 220 pixels wide with 12-pixel text and 6-pixel padding. `TargetChoice`
 omits descriptions after the first em dash and preserves the stream ID.

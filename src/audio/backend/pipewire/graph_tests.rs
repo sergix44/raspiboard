@@ -1,6 +1,80 @@
 use super::*;
 
 #[test]
+fn recording_uses_default_devices_and_duplicates_a_mono_microphone_into_stereo() {
+    let mut graph = Graph::default();
+    graph.insert(
+        10,
+        Kind::Node,
+        props(&[
+            ("media.class", "Audio/Sink"),
+            ("node.name", "speakers"),
+            ("object.serial", "100"),
+        ]),
+    );
+    graph.insert(
+        20,
+        Kind::Node,
+        props(&[
+            ("media.class", "Audio/Source"),
+            ("node.name", "microphone"),
+            ("object.serial", "200"),
+        ]),
+    );
+    graph.default_property(Some("default.audio.sink"), Some(r#"{"name":"speakers"}"#));
+    graph.default_property(
+        Some("default.audio.source"),
+        Some(r#"{"name":"microphone"}"#),
+    );
+    let (output, microphone) = graph.recording_devices().unwrap();
+    assert_eq!(graph.resolve(&output).unwrap(), 10);
+    assert_eq!(graph.resolve(&microphone).unwrap(), 20);
+    graph.insert(
+        21,
+        Kind::Port,
+        props(&[
+            ("node.id", "20"),
+            ("port.direction", "out"),
+            ("audio.channel", "MONO"),
+        ]),
+    );
+    for (id, channel) in [(31, "FL"), (32, "FR")] {
+        graph.insert(
+            id,
+            Kind::Port,
+            props(&[
+                ("node.id", "30"),
+                ("port.direction", "in"),
+                ("audio.channel", channel),
+            ]),
+        );
+    }
+    assert_eq!(
+        graph.mix_port_pairs(20, 30).unwrap(),
+        vec![(21, 31), (21, 32)]
+    );
+    graph.default_property(Some("default.audio.source"), None);
+    assert!(graph.recording_devices().is_none());
+}
+
+#[test]
+fn recording_does_not_add_the_microphone_twice_when_it_is_already_monitored() {
+    let mut graph = Graph::default();
+    graph.insert(
+        90,
+        Kind::Link,
+        props(&[("link.output.node", "20"), ("link.input.node", "15")]),
+    );
+    graph.insert(
+        91,
+        Kind::Link,
+        props(&[("link.output.node", "15"), ("link.input.node", "10")]),
+    );
+    assert!(graph.feeds(20, 10));
+    assert!(!graph.feeds(30, 10));
+}
+
+#[test]
 fn passthrough_capture_accepts_paused_links_but_not_negotiation_or_errors() {
     let mut graph = Graph::default();
     graph.insert(99, Kind::Link, props(&[("link.state", "paused")]));

@@ -11,11 +11,13 @@ pub enum Kind {
     Node,
     Port,
     Link,
+    Metadata,
 }
 
 #[derive(Default)]
 pub struct Graph {
     objects: BTreeMap<u32, (Kind, Properties)>,
+    defaults: BTreeMap<String, String>,
 }
 
 impl Graph {
@@ -37,7 +39,79 @@ impl Graph {
     }
 
     pub fn remove(&mut self, id: u32) {
-        self.objects.remove(&id);
+        if self
+            .objects
+            .remove(&id)
+            .is_some_and(|(kind, _)| kind == Kind::Metadata)
+        {
+            self.defaults.clear();
+        }
+    }
+
+    pub fn default_property(&mut self, key: Option<&str>, value: Option<&str>) {
+        let Some(key) = key else {
+            self.defaults.clear();
+            return;
+        };
+        if !matches!(key, "default.audio.sink" | "default.audio.source") {
+            return;
+        }
+        let name = value
+            .and_then(|value| serde_json::from_str::<serde_json::Value>(value).ok())
+            .and_then(|value| {
+                value
+                    .get("name")
+                    .and_then(|name| name.as_str())
+                    .map(str::to_owned)
+            });
+        if let Some(name) = name {
+            self.defaults.insert(key.into(), name);
+        } else {
+            self.defaults.remove(key);
+        }
+    }
+
+    pub fn recording_devices(&self) -> Option<(Target, Target)> {
+        let endpoint = |key, class| {
+            let name = self.defaults.get(key)?;
+            self.objects.iter().find_map(|(&id, (kind, props))| {
+                if *kind != Kind::Node
+                    || value(props, "node.name") != name
+                    || value(props, "media.class") != class
+                    || value(props, "application.id") == APP_ID
+                {
+                    return None;
+                }
+                Some(Target {
+                    id: identity(id, props.get("object.serial")?.parse().ok()?),
+                    display_label: name.clone(),
+                    label: name.clone(),
+                })
+            })
+        };
+        Some((
+            endpoint("default.audio.sink", "Audio/Sink")?,
+            endpoint("default.audio.source", "Audio/Source")?,
+        ))
+    }
+
+    pub fn feeds(&self, source: u32, target: u32) -> bool {
+        let mut pending = vec![target];
+        let mut visited = BTreeSet::new();
+        while let Some(node) = pending.pop() {
+            if node == source {
+                return true;
+            }
+            if !visited.insert(node) {
+                continue;
+            }
+            pending.extend(self.objects.values().filter_map(|(kind, props)| {
+                (*kind == Kind::Link && number(props, "link.input.node") == Some(node))
+                    .then(|| number(props, "link.output.node"))
+                    .flatten()
+            }));
+        }
+        false
     }
 
     pub fn update(&mut self, id: u32, props: Properties) {
@@ -177,6 +251,19 @@ impl Graph {
                     .ok_or_else(|| format!("No output is available for channel {channel}."))
             })
             .collect()
+    }
+
+    pub fn mix_port_pairs(&self, source: u32, target: u32) -> Result<Vec<(u32, u32)>, String> {
+        let outputs = self.channels(source, "out")?;
+        if let Some(&mono) = outputs.get("MONO") {
+            Ok(self
+                .channels(target, "in")?
+                .values()
+                .map(|&input| (mono, input))
+                .collect())
+        } else {
+            self.port_pairs(source, target)
+        }
     }
 
     pub fn has_link(&self, source: u32, target: u32) -> Result<bool, String> {

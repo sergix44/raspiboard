@@ -12,6 +12,34 @@ fn directory() -> tempfile::TempDir {
 }
 
 #[test]
+fn recording_preferences_survive_restart_and_keep_the_store_default_directory() {
+    use raspiboard::recording::RecordingFormat;
+    let dir = directory();
+    let store = Store::new(dir.path());
+    let mut board = Soundboard::from_store(store.clone());
+    assert_eq!(
+        board.recording_directory(),
+        Some(dir.path().join("recordings"))
+    );
+    let custom = dir.path().join("other captures");
+    let _ = board.update(Message::RecordingDirectoryChosen(Some(custom.clone())));
+    let _ = board.update(Message::RecordingFormatChanged(RecordingFormat::Wav));
+    drop(board);
+    let mut board = Soundboard::from_store(store.clone());
+    assert_eq!(board.recordings.format, RecordingFormat::Wav);
+    assert_eq!(board.recording_directory(), Some(custom));
+    let _ = board.update(Message::ResetRecordingDirectory);
+    drop(board);
+    let board = Soundboard::from_store(store);
+    assert_eq!(
+        board.recording_directory(),
+        Some(dir.path().join("recordings"))
+    );
+    assert_eq!(board.recordings.format, RecordingFormat::Wav);
+    assert_eq!(board.audio.recording, audio::RecordingStatus::Idle);
+}
+
+#[test]
 fn desktop_hotkeys_restore_on_launch_and_clear_survives_restart() {
     use raspiboard::hotkeys::{Assignment, Event};
     let dir = directory();
@@ -132,6 +160,7 @@ fn reopening_restores_settings_and_grid_order_without_starting_audio() {
             volumes_linked: false,
             sound_button_scale: 100,
             minimize_to_tray: false,
+            recordings: Default::default(),
         })
         .unwrap();
     store

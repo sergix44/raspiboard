@@ -1,12 +1,38 @@
 use std::{
+    collections::VecDeque,
     fs::File,
-    path::Path,
-    sync::atomic::{AtomicBool, Ordering},
+    path::{Path, PathBuf},
+    sync::{
+        Arc, LazyLock, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::SystemTime,
 };
 
 use super::decode::ClipDecoder;
 
 const MAX_PEAKS: usize = 2048;
+const CACHE_SIZE: usize = 16;
+type CachedWaveforms = VecDeque<(CacheKey, Arc<Waveform>)>;
+static CACHE: LazyLock<Mutex<CachedWaveforms>> = LazyLock::new(Mutex::default);
+
+#[derive(PartialEq, Eq)]
+struct CacheKey {
+    path: PathBuf,
+    bytes: u64,
+    modified: SystemTime,
+}
+
+impl CacheKey {
+    fn read(path: &Path) -> Option<Self> {
+        let metadata = path.metadata().ok()?;
+        Some(Self {
+            path: path.into(),
+            bytes: metadata.len(),
+            modified: metadata.modified().ok()?,
+        })
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct Waveform {
@@ -14,7 +40,34 @@ pub struct Waveform {
     pub duration_ms: u64,
 }
 
-pub fn analyze(path: &Path, cancel: &AtomicBool) -> Result<Waveform, String> {
+pub fn analyze(path: &Path, cancel: &AtomicBool) -> Result<Arc<Waveform>, String> {
+    check_cancel(cancel)?;
+    let key = CacheKey::read(path);
+    if let Some(key) = &key {
+        let mut cache = CACHE.lock().unwrap_or_else(|error| error.into_inner());
+        if let Some(index) = cache.iter().position(|(current, _)| current == key) {
+            let entry = cache.remove(index).unwrap();
+            let waveform = entry.1.clone();
+            cache.push_back(entry);
+            check_cancel(cancel)?;
+            return Ok(waveform);
+        }
+    }
+    let waveform = Arc::new(analyze_uncached(path, cancel)?);
+    if let Some(key) = key
+        && CacheKey::read(path).as_ref() == Some(&key)
+    {
+        let mut cache = CACHE.lock().unwrap_or_else(|error| error.into_inner());
+        cache.retain(|(current, _)| current.path != key.path);
+        cache.push_back((key, waveform.clone()));
+        if cache.len() > CACHE_SIZE {
+            cache.pop_front();
+        }
+    }
+    Ok(waveform)
+}
+
+fn analyze_uncached(path: &Path, cancel: &AtomicBool) -> Result<Waveform, String> {
     check_cancel(cancel)?;
     let file = File::open(path).map_err(|error| format!("Cannot open audio: {error}"))?;
     let mut decoder = ClipDecoder::open(Box::new(file), path.extension().and_then(|e| e.to_str()))?;
@@ -25,16 +78,9 @@ pub fn analyze(path: &Path, cancel: &AtomicBool) -> Result<Waveform, String> {
         let Some(samples) = decoder.next_samples()? else {
             break;
         };
-        for (index, frame) in samples.chunks_exact(channels).enumerate() {
-            if index % 4096 == 0 {
-                check_cancel(cancel)?;
-            }
-            let peak = frame
-                .iter()
-                .copied()
-                .filter(|v| v.is_finite())
-                .fold(0.0_f32, |peak, sample| peak.max(sample.abs().min(1.0)));
-            summary.push(peak);
+        for block in samples.chunks(4096 * channels) {
+            check_cancel(cancel)?;
+            summary.extend(block, channels);
         }
     }
     check_cancel(cancel)?;
@@ -70,21 +116,32 @@ impl Default for Summary {
 }
 
 impl Summary {
-    fn push(&mut self, peak: f32) {
-        if self.frames / self.bin_frames == MAX_PEAKS as u64 {
-            for index in 0..MAX_PEAKS / 2 {
-                self.peaks[index] = self.peaks[index * 2].max(self.peaks[index * 2 + 1]);
+    fn extend(&mut self, mut samples: &[f32], channels: usize) {
+        while samples.len() >= channels {
+            if self.frames / self.bin_frames == MAX_PEAKS as u64 {
+                for index in 0..MAX_PEAKS / 2 {
+                    self.peaks[index] = self.peaks[index * 2].max(self.peaks[index * 2 + 1]);
+                }
+                self.peaks.truncate(MAX_PEAKS / 2);
+                self.bin_frames *= 2;
             }
-            self.peaks.truncate(MAX_PEAKS / 2);
-            self.bin_frames *= 2;
+            let index = (self.frames / self.bin_frames) as usize;
+            let frames = (self.bin_frames - self.frames % self.bin_frames)
+                .min((samples.len() / channels) as u64) as usize;
+            let length = frames * channels;
+            let peak = samples[..length]
+                .iter()
+                .copied()
+                .filter(|value| value.is_finite())
+                .fold(0.0_f32, |peak, sample| peak.max(sample.abs().min(1.0)));
+            if index == self.peaks.len() {
+                self.peaks.push(peak);
+            } else {
+                self.peaks[index] = self.peaks[index].max(peak);
+            }
+            self.frames += frames as u64;
+            samples = &samples[length..];
         }
-        let index = (self.frames / self.bin_frames) as usize;
-        if index == self.peaks.len() {
-            self.peaks.push(peak);
-        } else {
-            self.peaks[index] = self.peaks[index].max(peak);
-        }
-        self.frames += 1;
     }
 
     fn finish(self) -> Vec<f32> {
@@ -186,5 +243,41 @@ mod tests {
         let result = analyze(&path, &AtomicBool::new(false)).unwrap();
         assert!((97..=125).contains(&result.duration_ms));
         assert!(result.peaks.iter().any(|peak| *peak > 0.01));
+    }
+
+    #[test]
+    fn unchanged_waveforms_are_reused_and_file_edits_invalidate_the_cache() {
+        let file = wav(1, 1000, &[0, 16384]);
+        let first = analyze(file.path(), &AtomicBool::new(false)).unwrap();
+        let second = analyze(file.path(), &AtomicBool::new(false)).unwrap();
+        assert!(std::sync::Arc::ptr_eq(&first, &second));
+        let mut bytes = std::fs::read(file.path()).unwrap();
+        let len = bytes.len();
+        bytes[len - 2..].copy_from_slice(&32767_i16.to_le_bytes());
+        std::fs::write(file.path(), bytes).unwrap();
+        let previous = file.as_file().metadata().unwrap().modified().unwrap();
+        file.as_file()
+            .set_times(
+                std::fs::FileTimes::new()
+                    .set_modified(previous + std::time::Duration::from_secs(1)),
+            )
+            .unwrap();
+        let changed = analyze(file.path(), &AtomicBool::new(false)).unwrap();
+        assert!(!std::sync::Arc::ptr_eq(&first, &changed));
+        assert!(changed.peaks[1] > 0.99);
+        assert!(analyze(file.path(), &AtomicBool::new(true)).is_err());
+    }
+
+    #[test]
+    fn waveform_summary_is_independent_of_decoder_packet_boundaries() {
+        let samples: Vec<_> = (0..150_003).map(|n| (n % 1024) as f32 / 1024.0).collect();
+        let mut whole = Summary::default();
+        whole.extend(&samples, 1);
+        let mut split = Summary::default();
+        for block in samples.chunks(137) {
+            split.extend(block, 1);
+        }
+        assert_eq!(whole.frames, split.frames);
+        assert_eq!(whole.finish(), split.finish());
     }
 }

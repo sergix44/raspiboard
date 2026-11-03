@@ -3,6 +3,40 @@ use raspiboard::hotkeys::{Assignment, Event as HotkeyEvent};
 use raspiboard::theme::ThemeChoice;
 
 #[test]
+fn recording_uses_current_preferences_and_does_not_stop_playback_when_toggled() {
+    use raspiboard::recording::RecordingFormat;
+    let mut board = default_board();
+    assert!(board.recording_command().is_none());
+    board.audio.connected = true;
+    board.default_recording_directory = Some("/data/recordings".into());
+    let _ = board.update(Message::RecordingFormatChanged(RecordingFormat::Ogg));
+    let _ = board.update(Message::RecordingDirectoryChosen(Some(
+        "/sounds/captures".into(),
+    )));
+    match board.recording_command().unwrap() {
+        Command::StartRecording { directory, format } => {
+            assert_eq!(directory, PathBuf::from("/sounds/captures"));
+            assert_eq!(format, RecordingFormat::Ogg);
+        }
+        _ => panic!("expected recording start"),
+    }
+    board.audio.recording = audio::RecordingStatus::Recording;
+    board.audio.playback = PlaybackStatus::Playing;
+    assert!(matches!(
+        board.recording_command(),
+        Some(Command::StopRecording)
+    ));
+    let _ = board.update(Message::RecordingDirectoryChosen(None));
+    assert_eq!(board.recordings.directory, Some("/sounds/captures".into()));
+    assert_eq!(board.audio.recording, audio::RecordingStatus::Recording);
+    assert_eq!(board.audio.playback, PlaybackStatus::Playing);
+    board.audio.recording = audio::RecordingStatus::Saving;
+    assert!(board.recording_command().is_none());
+    let _ = board.update(Message::ResetRecordingDirectory);
+    assert!(board.recordings.directory.is_none());
+}
+
+#[test]
 fn passthrough_toggle_requires_endpoints_and_follows_confirmed_backend_state() {
     let mut board = default_board();
     assert!(board.passthrough_command().is_none());
@@ -620,6 +654,27 @@ fn deleting_a_pad_invalidates_its_pending_picker_and_options() {
 fn options_event(board: &mut Soundboard, action: button_options::Action) {
     let generation = board.options.generation;
     let _ = board.update(Message::OptionsChanged { generation, action });
+}
+
+#[test]
+fn options_prefills_the_filename_stem_and_preserves_audio_and_other_settings() {
+    let mut board = default_board();
+    board.buttons[0].full_path = Some("/sounds/A long filename.with dots.mp3".into());
+    board.buttons[0].name = Some("Custom name".into());
+    let _ = board.update(Message::OpenButtonOptions(INITIAL_ID.into()));
+    board.audio.playback = PlaybackStatus::Playing;
+    options_event(&mut board, button_options::Action::PrefillFilename);
+    assert_eq!(
+        board.buttons[0].name.as_deref(),
+        Some("A long filename.with dots")
+    );
+    assert_eq!(board.audio.playback, PlaybackStatus::Playing);
+    board.buttons[0].full_path = None;
+    options_event(&mut board, button_options::Action::PrefillFilename);
+    assert_eq!(
+        board.buttons[0].name.as_deref(),
+        Some("A long filename.with dots")
+    );
 }
 
 #[test]

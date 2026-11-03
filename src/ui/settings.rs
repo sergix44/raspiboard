@@ -10,6 +10,9 @@ pub(super) fn view(
     theme: ThemeChoice,
     sound_button_scale: u16,
     minimize_to_tray: bool,
+    recordings: &raspiboard::recording::RecordingSettings,
+    directory: Option<std::path::PathBuf>,
+    choosing_directory: bool,
 ) -> Element<'static, Message> {
     let controls = column![
         column![
@@ -54,6 +57,7 @@ pub(super) fn view(
         text("Changes apply immediately.")
             .size(13)
             .style(text::secondary),
+        super::recording::settings_view(recordings, directory, choosing_directory),
     ]
     .spacing(20);
     column![
@@ -68,7 +72,7 @@ pub(super) fn view(
         container(
             row![
                 sound_pad::animated(
-                    button(text("Use default").width(Fill).center())
+                    button(text("Default theme").width(Fill).center())
                         .on_press_maybe(
                             (theme != ThemeChoice::Deck)
                                 .then_some(Message::ThemeChanged(ThemeChoice::Deck))

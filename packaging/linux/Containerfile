@@ -3,7 +3,7 @@ FROM docker.io/library/rust:1.97.0-slim-trixie@sha256:1ac626cf2baacc6c87631f4c22
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential cmake pkg-config clang libclang-dev \
     libpipewire-0.3-dev libspa-0.2-dev libpipewire-0.3-modules \
-    libspa-0.2-modules pipewire-bin libwayland-client0 libwayland-cursor0 libwayland-egl1 \
+    libspa-0.2-modules pipewire-bin libsndfile1 libwayland-client0 libwayland-cursor0 libwayland-egl1 \
     libxkbcommon0 libxkbcommon-x11-0 libx11-6 libx11-xcb1 libxcursor1 \
     libxi6 libxrandr2 libxrender1 libxfixes3 libxinerama1 libegl1 libgl1 \
     libvulkan1 ca-certificates curl php-cli imagemagick dpkg-dev \

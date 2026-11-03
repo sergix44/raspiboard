@@ -13,7 +13,8 @@ impl Soundboard {
     }
 
     pub(super) fn from_store(store: Store) -> Self {
-        match store.load_or_create() {
+        let directory = store.recordings_directory();
+        let mut board = match store.load_or_create() {
             Ok(saved) => match Writer::start(store) {
                 Ok(writer) => Self::from_saved(saved, Some(writer)),
                 Err(error) => Self {
@@ -25,7 +26,9 @@ impl Soundboard {
                 storage_error: Some(error),
                 ..Self::default()
             },
-        }
+        };
+        board.default_recording_directory = Some(directory);
+        board
     }
 
     pub(super) fn from_saved(saved: State, persistence: Option<Writer>) -> Self {
@@ -60,6 +63,12 @@ impl Soundboard {
             main_hidden: false,
             tray_available: false,
             minimize_to_tray: saved.settings.minimize_to_tray,
+            recordings: saved.settings.recordings,
+            default_recording_directory: Store::in_home()
+                .ok()
+                .map(|store| store.recordings_directory()),
+            choosing_recording_directory: false,
+            quitting: false,
             settings_window: None,
             options_window: None,
             options_button: None,
@@ -95,6 +104,7 @@ impl Soundboard {
             volumes_linked: self.volumes_linked,
             sound_button_scale: self.sound_button_scale,
             minimize_to_tray: self.minimize_to_tray,
+            recordings: self.recordings.clone(),
         }))
     }
 

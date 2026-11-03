@@ -117,9 +117,12 @@ Losing the selected stream leaves None selected rather than choosing a replaceme
 `Command::Play` snapshots the pad's `PlaybackOptions`. Name/color changes affect
 appearance immediately, while gain and crop wait until the next Play. Decoding
 counts source frames so Start is inclusive and End exclusive, even across packet
-boundaries. Cropped playback first checks the requested bounds and then reopens
-the decoder; this uses bounded memory but adds decoding work for long offsets.
-Default playback skips that scan. Cancellation remains active throughout scanning,
+boundaries. When a container reports its frame count, crop validation uses that
+count and an accurate seek with 100 ms of decoder preroll. The first emitted
+packet's timestamp and encoder trim establish the sample position, preserving
+crop boundaries across compressed formats. Formats without frame counts retain
+the bounded validation scan; failed seeks fall back to decoding from the start.
+Default playback skips crop validation. Cancellation remains active throughout scanning,
 and routing's timeout starts once decoded outputs are ready to connect.
 
 Crop start/end are in milliseconds; frame boundaries round up to the first frame
@@ -131,7 +134,11 @@ samples, so a quiet master does not clip a boosted intermediate sample.
 
 `audio/waveform.rs` uses the same codec registry for background analysis. It
 compacts peaks incrementally to at most 2048 bins and counts decoded frames for
-duration, keeping memory bounded without retaining the whole clip.
+duration, keeping memory bounded without retaining the whole clip. Peak reduction
+runs in blocks rather than updating summary bins once per frame. A bounded cache
+retains 16 summaries keyed by path, size and modification time; unchanged files
+reuse their Arc while changed files are reanalyzed. The cache lock is released
+before decoding. Audio codec crates are optimized in development builds as well.
 
 ## Decoding without blocking playback
 
@@ -294,6 +301,45 @@ routing arrow. The raised-button widget requests periodic redraws only while
 its two-second blink cycle is running, with one-second on/off phases softened by
 a 40 ms warm-up and 60 ms afterglow. Backend state confirms active sharing;
 clicking the button does not optimistically light the arrow.
+
+## System audio recording
+
+`capture.rs` now owns the native capture adapter and circular-buffer parsing
+shared with passthrough. Application taps retain owned manual links. Recording
+reads the default output and microphone from PipeWire's default metadata and
+combines them through owned links into a private stereo sink. Mono input is
+duplicated into left and right; existing mic-to-output paths prevent adding the
+mic twice. The sink monitor feeds the recording capture adapter. Its link group
+prevents automatic local playback links, and the mic is never linked to speakers.
+All inputs must connect before capture is enabled. Device disappearance or a
+default-device change stops capture and finalizes the file. No default devices
+or existing microphone/speaker links are changed.
+
+`recording.rs` manages Starting, Recording and Saving independently from clip
+transport and passthrough. A background `recording::writer::WriterJob` creates a
+unique file and signals readiness before capture starts. Captured stereo frames
+enter a 65,536-frame queue without waiting; EMPTY chunks enqueue zero frames so
+silence preserves duration. Corrupt chunks or overflow latch a fault that stops
+recording. Startup and removed connections also fail visibly.
+
+The writer thread sanitizes/clamps samples and sends bounded blocks to libsndfile
+through the small encoder wrapper. FLAC and WAV use 24-bit PCM at 48 kHz stereo;
+Ogg uses Vorbis. The wrapper opens files with create-new semantics, keeps the
+library alive for its function pointers, checks native write and close results,
+and syncs the file before publishing completion. WAV and FLAC counters are checked
+against their format limits. Empty cancelled recordings are removed.
+
+Record again drops capture before signaling the writer to drain and finalize.
+Only a finished encoder publishes a saved path. `FinishRecording` acknowledges
+after finalization, including Start queued immediately before Quit. UI quit
+awaits that acknowledgment without blocking; closing to the tray does not send
+it. On connection teardown the audio worker stops capture and finishes the writer
+before reconnecting, preserving the captured file and reporting its path.
+
+`Settings::recordings` persists format and an optional absolute folder override.
+The UI resolves an omitted folder relative to its Store and snapshots both
+preferences into StartRecording. Changes during capture affect only the next
+file. The Record control reuses the existing red blink; Stop stays clip-only.
 
 ## Platform boundary
 

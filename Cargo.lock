@@ -2829,6 +2829,7 @@ dependencies = [
  "iced_aw",
  "image",
  "ksni",
+ "libloading",
  "pipewire",
  "rfd",
  "rtrb",

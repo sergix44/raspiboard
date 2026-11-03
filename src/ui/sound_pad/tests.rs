@@ -263,7 +263,7 @@ fn transport_buttons_use_semantic_colors_and_remain_distinct_when_disabled() {
         assert_eq!(pause.color, iced::color!(0xfacc15));
         assert_eq!(pause.text, Color::BLACK);
         assert_eq!(play.color, theme.extended_palette().success.base.color);
-        assert_eq!(stop.color, theme.extended_palette().danger.base.color);
+        assert_eq!(stop.color, iced::color!(0x7dd3fc));
         assert_ne!(play.color, stop.color);
         let disabled_play = colors(&theme, false, false, Tone::Play);
         let disabled_stop = colors(&theme, false, false, Tone::Stop);

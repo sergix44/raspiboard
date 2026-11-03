@@ -151,7 +151,7 @@ impl Session {
                         let route = Route::new(core, graph, target, self.sequence)?;
                         let player = Player::new(
                             core,
-                            Some(&route.name),
+                            Some(&route.sink.name),
                             decoded,
                             volumes.remote.clone(),
                             self.paused.clone(),
@@ -201,7 +201,7 @@ impl Session {
         }
         let remote_ready = if let Some(remote) = &mut playback.remote {
             let output_ready = remote.route.prepare(core, graph)?;
-            let input_ready = match remote.route.id.get() {
+            let input_ready = match remote.route.sink.id.get() {
                 Some(sink) => graph.has_link(remote.player.stream.node_id(), sink)?,
                 None => false,
             };

@@ -3,13 +3,18 @@ use self::{
     graph::Graph,
     session::{Playback, Session},
 };
+mod capture;
 mod discovery;
 mod graph;
 mod passthrough;
 mod player;
+mod recording;
+mod recording_mix;
 mod route;
 mod session;
-use crate::audio::{Command, PassthroughStatus, PlaybackInstance, PlaybackStatus, Snapshot};
+use crate::audio::{
+    Command, PassthroughStatus, PlaybackInstance, PlaybackStatus, RecordingStatus, Snapshot,
+};
 use crate::audio::{PlaybackOptions, Target, buffer, job};
 use pipewire as pw;
 use std::{
@@ -55,6 +60,8 @@ struct Engine {
     sequence: u64,
     passthrough: Option<passthrough::Passthrough>,
     retiring_passthrough: Vec<passthrough::RetiringPassthrough>,
+    recording: Option<recording::Recording>,
+    recording_finish: Vec<async_channel::Sender<Result<(), String>>>,
 }
 
 fn playback_status(instances: &[PlaybackInstance]) -> PlaybackStatus {
@@ -189,6 +196,28 @@ impl Engine {
 
     fn command(&mut self, command: Command, volumes: &OutputVolumes) {
         match command {
+            Command::StartRecording { directory, format } => {
+                if self.recording.is_none() && self.recording_finish.is_empty() {
+                    self.snapshot.error = None;
+                    self.snapshot.last_recording = None;
+                    match recording::Recording::new(directory, format) {
+                        Ok(recording) => {
+                            self.recording = Some(recording);
+                            self.snapshot.recording = RecordingStatus::Starting;
+                        }
+                        Err(error) => self.snapshot.error = Some(error),
+                    }
+                }
+            }
+            Command::StopRecording => self.stop_recording(),
+            Command::FinishRecording(done) => {
+                if self.recording.is_some() {
+                    self.recording_finish.push(done);
+                    self.stop_recording();
+                } else {
+                    let _ = done.try_send(Ok(()));
+                }
+            }
             Command::SelectSource(source) => {
                 self.stop_passthrough();
                 self.snapshot.error = None;
@@ -270,6 +299,13 @@ impl Engine {
     }
 
     fn tick(&mut self, core: &pw::core::CoreRc, graph: &Graph, volumes: &OutputVolumes) {
+        if let Some(recording) = &mut self.recording {
+            let (status, completion) = recording.poll(core, graph);
+            self.snapshot.recording = status;
+            if let Some(completion) = completion {
+                self.recording_completed(completion);
+            }
+        }
         self.retiring_passthrough
             .retain_mut(passthrough::RetiringPassthrough::retain);
         self.retiring
@@ -326,6 +362,31 @@ impl Engine {
         }
         self.passthrough.as_mut().unwrap().tick(core, graph)
     }
+
+    fn stop_recording(&mut self) {
+        if let Some(recording) = &mut self.recording {
+            recording.stop();
+            self.snapshot.recording = RecordingStatus::Saving;
+        }
+    }
+
+    fn recording_completed(&mut self, completion: recording::Completion) {
+        self.recording = None;
+        self.snapshot.recording = RecordingStatus::Idle;
+        let acknowledgment = match completion {
+            Ok(path) => {
+                self.snapshot.last_recording = path;
+                Ok(())
+            }
+            Err(error) => {
+                self.snapshot.error = Some(error.clone());
+                Err(error)
+            }
+        };
+        for done in self.recording_finish.drain(..) {
+            let _ = done.try_send(acknowledgment.clone());
+        }
+    }
 }
 
 pub fn run(
@@ -338,8 +399,12 @@ pub fn run(
     let volumes = OutputVolumes::default();
     while !shutdown.load(Ordering::Acquire) {
         for command in commands.try_iter() {
-            if let Command::SetVolumes { remote, local } = command {
-                volumes.set(remote, local);
+            match command {
+                Command::SetVolumes { remote, local } => volumes.set(remote, local),
+                Command::FinishRecording(done) => {
+                    let _ = done.try_send(Ok(()));
+                }
+                _ => {}
             }
         }
         let result = connection(
@@ -442,7 +507,23 @@ fn connection(
     mainloop.run();
     engine.borrow_mut().stop();
     engine.borrow_mut().stop_passthrough();
-    let error = errors.borrow_mut().take();
+    let recording = engine.borrow_mut().recording.take();
+    let mut error = errors.borrow_mut().take();
+    if let Some(recording) = recording {
+        let completion = recording.finish();
+        let detail = match &completion {
+            Ok(Some(path)) => Some(format!("Captured recording: {}", path.display())),
+            Err(message) => Some(message.clone()),
+            Ok(None) => None,
+        };
+        if let Some(detail) = detail {
+            error = Some(format!(
+                "{} {detail}",
+                error.unwrap_or_else(|| "PipeWire disconnected.".into())
+            ));
+        }
+        engine.borrow_mut().recording_completed(completion);
+    }
     match error {
         Some(error) => Err(error),
         None => Ok(()),

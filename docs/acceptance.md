@@ -97,13 +97,13 @@ Wayland and X11 where available. Build and check packages as described in
    icons follow the buttons' text colors.
 7. Click the cog. Expect a separate Settings window with its own title bar;
    the soundboard remains undimmed and usable.
-8. Expect 64×64 Play and Stop buttons, colored green and red respectively.
-   Disabled controls retain muted versions of those colors. Settings is 32×32,
+8. Expect 64×64 Play, Stop and Record buttons, colored green, blue and red respectively.
+   Disabled controls retain muted versions of those colors. Settings is 64×64,
    and the link control is a 24×24 icon with no visible background or border,
    including on hover and press. Linked and unlinked glyphs remain distinct.
    Two short bracket lines above and below the chain indicate both slider rows;
    they use the accent color when linked and a muted text color when unlinked.
-9. Play, Stop, Settings, Use default, and Close share the pads' raised
+9. Play, Stop, Settings, Default theme, and Close share the pads' raised
    face, shaded edge, shadow, and press feedback. Click and drag outside each:
    no action fires. The dropdown remains a compact native selector.
 10. Expect 12-pixel content/footer margins, tighter footer spacing, and a smaller
@@ -159,6 +159,66 @@ Wayland and X11 where available. Build and check packages as described in
    sharing off. Disconnect/reconnect PipeWire: sharing must remain off after
    reconnection. Quitting Raspiboard restores ordinary source listening and
    microphone behavior without leaving any passthrough links behind.
+
+## System recording and preferences
+
+1. Run `cargo run --locked`. Open Settings and scroll to **Recordings**. Expect
+   FLAC by default and `~/.raspiboard/recordings/` as the folder. Choose another
+   folder and format, close/reopen Settings, then restart: preferences remain.
+   Cancel folder picking and verify the old folder remains. Use default folder:
+   the default is restored. Existing recordings must stay in their old folder.
+2. Play a video or music, then click the red Record button. Expect Starting to
+   become the same one-second on/off filament blink as passthrough, in red.
+   Record again: expect Saving, then a saved path. Add that file to a pad and
+   play it: audio matches the desktop output. Repeat with WAV and Ogg Vorbis;
+   extensions match the selected format and all three files play in an external
+   player too. No pad is added automatically and no existing file is overwritten.
+3. Record a source, several seconds of silence, then more audio. Verify the
+   silence remains in the file and duration matches the session. Speak into the
+   default microphone without monitoring it to speakers: your voice must appear
+   alongside desktop audio, without live microphone feedback. Test a mono mic
+   and check its voice is present in both stereo channels. If the mic already
+   feeds the desktop output, verify it is not doubled. Turn microphone monitoring
+   on or off during capture: expect recording to stop and finalize with an error
+   asking you to restart it, rather than silently losing or doubling voice. Audio
+   sent to another output or only to a remote application must not appear.
+4. Record while playing clips and sharing passthrough. Stop/Pause clips, use
+   Options Preview, change either app selector and open the audio file picker.
+   Recording continues, capturing the default desktop output and microphone.
+   Stopping Record leaves clips and passthrough alone. Check both themes at the
+   minimum window size: all toolbar controls and selectors remain reachable.
+5. During recording, change format and folder. Finish: the current file uses its
+   original preferences; the next file uses the new ones. Closing to the tray
+   keeps recording. Quit from the tray or close normally: a playable file is
+   saved before exit. Also click Record then Quit immediately; no hang or empty
+   leftover file. Repeat quick Record/Record and record again after saving.
+6. Choose an unwritable folder and try recording. Expect a visible error and no
+   claim of a saved file. Disconnect the recording output or PipeWire during
+   capture: expect recording to stop and captured data to be finalized where
+   possible. After reconnection recording remains off. Verify a full/busy disk
+   produces an error rather than a silently shortened successful recording.
+
+## Sound Options name and color layout
+
+1. Open a pad's Options. Name and its helper text align with the text field's
+   left edge. The color swatch stays to its left, with a smaller Reset directly
+   below the swatch. Verify at the minimum Options size and in both themes.
+2. Click Prefill filename at the right of the Name row. Expect the filename
+   without its extension to become editable text, replacing any custom name.
+   Edit part of a long name, close/reopen Options, and verify it is saved.
+   With no assigned file, Prefill filename is disabled. Prefill and color Reset
+   must leave playback and the other pad settings unchanged.
+
+## Long-file responsiveness
+
+1. With recording off, trigger a long MP3/AAC pad with a crop well into the file.
+   Expect prompt playback starting at the same saved crop, without scanning the
+   entire selected range first. Repeat with WAV, FLAC and Ogg.
+2. Open Options on a long sound. The first waveform load should finish faster;
+   close and reopen Options on the same unchanged file and expect immediate reuse.
+   Replace or externally edit the file, then reopen: expect a fresh waveform.
+3. Start recording and repeat playback and Options checks. Recording must include
+   desktop clips plus your default mic while the interface remains responsive.
 
 ## Adding sounds
 
@@ -230,11 +290,11 @@ Wayland and X11 where available. Build and check packages as described in
 4. Press Escape in Settings, including with the Theme dropdown open: Settings
    closes. Reopen Settings and press Escape in the main window: Settings stays
    open, and any grid menu closes. Clicking outside Settings leaves it open.
-5. With Console selected, click Use default. The selector changes to Deck and
+5. With Console selected, click Default theme. The selector changes to Deck and
    the button becomes disabled. The desktop preference and ICED_THEME environment
    variable do not replace the app's chosen theme.
 6. Resize Settings to its minimum 360×260 size. Theme and Sound button size
-   remain reachable by scrolling; Use default and Close stay visible. Open the
+   remain reachable by scrolling; Default theme and Close stay visible. Open the
    dropdown and select Console without
    resizing. The main window keeps its own 1000×360 minimum size.
    Its scrollbar sits at the window's right edge, outside the content margins,
@@ -245,7 +305,7 @@ Wayland and X11 where available. Build and check packages as described in
    stream ends while Settings is open, the main window immediately shows the
    cleared application selection and error.
 8. Relaunch Raspiboard. Expect the last selected theme and Settings closed. If
-   Use default was selected, the selector shows Deck.
+   Default theme was selected, the selector shows Deck.
 9. Leave Settings open and close the main window, including during playback.
    Both windows close, the process exits, and clip playback stops. Restart to
    confirm pending theme and volume saves completed.
@@ -258,7 +318,7 @@ Wayland and X11 where available. Build and check packages as described in
     and target stay selected, and volumes stay unchanged. Choose 150%, change the
     theme and volumes, close the app, and relaunch: size remains 150%.
 12. Launch with an existing configuration that has no `sound_button_scale`:
-    pads start at 100%. Use default continues to reset only the theme.
+    pads start at 100%. Default theme continues to reset only the theme.
 
 ## Saved settings and button grid
 
@@ -272,7 +332,7 @@ Wayland and X11 where available. Build and check packages as described in
    and 25%/70% unlinked. Nothing plays automatically; the first available recording
    application is selected once discovery finds one.
 3. Link the volumes, close, and relaunch. Expect both at 25% and linked. Choose
-   Use default, relaunch again, and expect the default theme selection.
+   Default theme, relaunch again, and expect the default theme selection.
 4. Use + Add Sound from the grid's right-click menu to add a second sound.
    Restart: their order and names follow the saved files. Right-click and assign
    each button a different WAV.
@@ -475,7 +535,7 @@ Run `cargo run --locked`, assign a known sound, and open Options.
    with readable glyphs in both themes. A full-size Lucide arrow separates the
    crop inputs. The Preview and Close footer stays fixed with its usual margins.
 2. Pick a color and confirm: pad face, readable label, and playing glow follow it.
-   Cancel another choice, then use Theme color. Confirm no playback restart.
+   Cancel another choice, then use Reset under the color picker. Confirm no playback restart.
    Test both Deck and Console. Clear Name: filename fallback returns.
 3. Choose −6 dB then +6 dB and restart the pad. Both local and remote audio should
    change relative to their master sliders. Setting a master to zero stays silent.

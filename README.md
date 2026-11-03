@@ -31,6 +31,8 @@ with no virtual microphone to select in that application.
   application receives with separate volume sliders.
 - **Share application audio.** Choose a browser, game, or audio player in the
   source dropdown and enable the green Cable button to share it into a call.
+- **Record desktop audio.** Capture your speakers/headphones mix as FLAC, WAV,
+  or Ogg Vorbis. Choose the format and output folder in Settings → Recordings.
 - **Make each pad yours.** Set names, colors, relative volume, and a cropped
   playback range with a waveform preview. Original files stay untouched.
 - **Stack sounds.** Enable Overlap Mode to layer clips, including repeated

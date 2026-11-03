@@ -139,6 +139,17 @@ impl Soundboard {
     }
 
     pub(super) fn quit(&mut self) -> Task<Message> {
+        if self.quitting {
+            return Task::none();
+        }
+        if let Some(controller) = self.controller.clone() {
+            self.quitting = true;
+            return Task::perform(controller.finish_recording(), Message::RecordingFinished);
+        }
+        self.finish_quit()
+    }
+
+    pub(super) fn finish_quit(&mut self) -> Task<Message> {
         self.reorder = None;
         self.main_hidden = false;
         self.main_window = None;

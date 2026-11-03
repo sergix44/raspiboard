@@ -14,7 +14,7 @@ copyright = "2026 Sergio Brighenti"
 section = "sound"
 priority = "optional"
 extended-description = "A desktop soundboard that plays clips locally and routes them into recording applications through PipeWire. Includes per-sound volume, cropping, overlapping playback, and desktop-managed global shortcuts."
-depends = "$auto, libpipewire-0.3-0t64 (>= 0.3.65), libwayland-client0, libwayland-cursor0, libwayland-egl1, libxkbcommon0, libxkbcommon-x11-0, libx11-6, libx11-xcb1, libxcursor1, libxi6, libxrandr2, libxrender1, libxfixes3, libxinerama1, libegl1, libgl1, libvulkan1, xdg-desktop-portal"
+depends = "$auto, libpipewire-0.3-0t64 (>= 0.3.65), libsndfile1 (>= 1.0.28), libwayland-client0, libwayland-cursor0, libwayland-egl1, libxkbcommon0, libxkbcommon-x11-0, libx11-6, libx11-xcb1, libxcursor1, libxi6, libxrandr2, libxrender1, libxfixes3, libxinerama1, libegl1, libgl1, libvulkan1, xdg-desktop-portal"
 assets = [
     ["target/release/raspiboard", "usr/bin/raspiboard", "755"],
     ["assets/io.raspiboard.Raspiboard.desktop", "usr/share/applications/", "644"],
@@ -28,6 +28,20 @@ assets = [
 lto = "thin"
 codegen-units = 1
 debug = "line-tables-only"
+
+# Keep audio decoding responsive in development without rebuilding the GUI optimized.
+[profile.dev.package.symphonia-core]
+opt-level = 3
+[profile.dev.package.symphonia-bundle-mp3]
+opt-level = 3
+[profile.dev.package.symphonia-codec-aac]
+opt-level = 3
+[profile.dev.package.symphonia-bundle-flac]
+opt-level = 3
+[profile.dev.package.symphonia-codec-vorbis]
+opt-level = 3
+[profile.dev.package.symphonia-codec-pcm]
+opt-level = 3
 
 [dependencies]
 iced = { version = "0.14.0", features = ["advanced", "canvas"] }
@@ -43,6 +57,7 @@ tempfile = "3.27"
 toml = "1.1.8"
 uuid = { version = "1.29.0", features = ["v7"] }
 image = { version = "0.25", default-features = false, features = ["png"] }
+libloading = "0.8.9"
 
 
 [target.'cfg(target_os = "linux")'.dependencies]

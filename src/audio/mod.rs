@@ -1,6 +1,6 @@
 mod backend;
 mod buffer;
-mod decode;
+pub(crate) mod decode;
 mod job;
 mod playback_options;
 pub mod waveform;
@@ -37,6 +37,15 @@ pub enum PassthroughStatus {
     Active,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RecordingStatus {
+    #[default]
+    Idle,
+    Starting,
+    Recording,
+    Saving,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlaybackInstance {
     pub button_id: String,
@@ -52,6 +61,8 @@ pub struct Snapshot {
     pub sources: Vec<Target>,
     pub source: Option<Target>,
     pub passthrough: PassthroughStatus,
+    pub recording: RecordingStatus,
+    pub last_recording: Option<PathBuf>,
     pub playback: PlaybackStatus,
     pub playbacks: Vec<PlaybackInstance>,
     pub error: Option<String>,
@@ -62,6 +73,12 @@ pub enum Command {
     Select(Option<Target>),
     SelectSource(Option<Target>),
     SetPassthrough(bool),
+    StartRecording {
+        directory: PathBuf,
+        format: crate::recording::RecordingFormat,
+    },
+    StopRecording,
+    FinishRecording(async_channel::Sender<Result<(), String>>),
     Play {
         button_id: String,
         overlap: bool,
@@ -92,6 +109,25 @@ impl Controller {
             mpsc::TrySendError::Full(_) => "Audio controls are busy. Please try again.".into(),
             mpsc::TrySendError::Disconnected(_) => "The audio worker is not available.".into(),
         })
+    }
+
+    pub async fn finish_recording(self) -> Result<(), String> {
+        let (done, receiver) = async_channel::bounded(1);
+        let (sent, status) = async_channel::bounded(1);
+        thread::Builder::new()
+            .name("recording-finish".into())
+            .spawn(move || {
+                let result = self.0.send(Command::FinishRecording(done)).map_err(|_| {
+                    "The audio worker stopped before recording could finish.".to_owned()
+                });
+                let _ = sent.send_blocking(result);
+            })
+            .map_err(|e| e.to_string())?;
+        status.recv().await.map_err(|e| e.to_string())??;
+        receiver
+            .recv()
+            .await
+            .map_err(|_| "The audio worker stopped before recording could finish.".to_owned())?
     }
 }
 
@@ -153,4 +189,33 @@ pub fn events() -> impl Stream<Item = Event> {
                 .await;
         },
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recording_finish_waits_for_acknowledgment_after_preceding_commands() {
+        let (sender, receiver) = mpsc::sync_channel(32);
+        let controller = Controller(sender);
+        controller.send(Command::StopRecording).unwrap();
+        let finish =
+            thread::spawn(move || iced::futures::executor::block_on(controller.finish_recording()));
+        assert!(matches!(receiver.recv().unwrap(), Command::StopRecording));
+        let Command::FinishRecording(done) = receiver.recv().unwrap() else {
+            panic!("finish command must follow Stop");
+        };
+        assert!(!finish.is_finished());
+        done.send_blocking(Ok(())).unwrap();
+        assert_eq!(finish.join().unwrap(), Ok(()));
+    }
+
+    #[test]
+    fn recording_finish_reports_a_disconnected_worker_instead_of_waiting_forever() {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        drop(receiver);
+        let result = iced::futures::executor::block_on(Controller(sender).finish_recording());
+        assert!(result.unwrap_err().contains("audio worker stopped"));
+    }
 }

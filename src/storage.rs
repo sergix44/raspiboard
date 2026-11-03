@@ -22,6 +22,7 @@ pub struct Settings {
     pub volumes_linked: bool,
     pub sound_button_scale: u16,
     pub minimize_to_tray: bool,
+    pub recordings: crate::recording::RecordingSettings,
 }
 
 impl Default for Settings {
@@ -33,6 +34,7 @@ impl Default for Settings {
             volumes_linked: false,
             sound_button_scale: 100,
             minimize_to_tray: false,
+            recordings: Default::default(),
         }
     }
 }
@@ -153,6 +155,10 @@ impl Store {
         std::env::home_dir()
             .map(|home| Self::new(home.join(".raspiboard")))
             .ok_or_else(|| "Cannot resolve the user's home directory".into())
+    }
+
+    pub fn recordings_directory(&self) -> PathBuf {
+        self.root.join("recordings")
     }
 
     /// Keep the returned file open for the application's lifetime; never remove it.
@@ -378,6 +384,14 @@ impl Store {
 }
 
 fn validate_settings(settings: &Settings) -> Result<(), String> {
+    if settings
+        .recordings
+        .directory
+        .as_ref()
+        .is_some_and(|directory| !directory.is_absolute())
+    {
+        return Err("recordings directory must be an absolute path".into());
+    }
     if !(MIN_SOUND_BUTTON_SCALE..=MAX_SOUND_BUTTON_SCALE).contains(&settings.sound_button_scale) {
         return Err("sound button scale must be between 50 and 200 percent".into());
     }

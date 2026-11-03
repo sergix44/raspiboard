@@ -41,6 +41,12 @@ impl Discovery {
                     ObjectType::Node => Kind::Node,
                     ObjectType::Port => Kind::Port,
                     ObjectType::Link => Kind::Link,
+                    ObjectType::Metadata
+                        if object.props.and_then(|props| props.get("metadata.name"))
+                            == Some("default") =>
+                    {
+                        Kind::Metadata
+                    }
                     _ => return,
                 };
                 let id = object.id;
@@ -51,6 +57,25 @@ impl Discovery {
                 );
                 let graph = added_graph.clone();
                 let watched = match kind {
+                    Kind::Metadata => {
+                        registry
+                            .bind::<pw::metadata::Metadata, _>(object)
+                            .map(|proxy| {
+                                let listener = proxy
+                                    .add_listener_local()
+                                    .property(move |subject, key, _, value| {
+                                        if subject == 0 {
+                                            graph.borrow_mut().default_property(key, value);
+                                        }
+                                        0
+                                    })
+                                    .register();
+                                Watched {
+                                    _listener: Box::new(listener),
+                                    _proxy: Box::new(proxy),
+                                }
+                            })
+                    }
                     Kind::Node => registry.bind::<pw::node::Node, _>(object).map(|proxy| {
                         let listener = proxy
                             .add_listener_local()

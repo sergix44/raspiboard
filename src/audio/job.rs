@@ -130,6 +130,21 @@ fn prepare(
         return Ok((decoder, FrameRange::default()));
     }
     let mut range = FrameRange::new(options, decoder.rate);
+    if let Some(frames) = decoder.frames {
+        let duration_ms = (u128::from(frames) * 1000)
+            .div_ceil(u128::from(decoder.rate))
+            .min(u128::from(u64::MAX)) as u64;
+        options.validate(Some(duration_ms))?;
+        range.end = range.end.map(|end| end.min(frames));
+        if range.start > 0 && decoder.seek_to_frame(range.start).is_err() {
+            let file = File::open(&path).map_err(|e| format!("Cannot open file: {e}"))?;
+            decoder = ClipDecoder::open(Box::new(file), extension)?;
+        }
+        if cancel.load(Ordering::Acquire) {
+            return Err("Audio decoding was cancelled.".into());
+        }
+        return Ok((decoder, range));
+    }
     let required = range.end.unwrap_or(0).max(range.start.saturating_add(1));
     let channels = decoder.channels;
     let mut frames = 0_u64;
@@ -167,7 +182,7 @@ fn produce(
     let fade_frames = (decoder.rate / 200).max(1) as usize;
     let mut tail = VecDeque::with_capacity(fade_frames + 1);
     let mut count = 0;
-    let mut source_frame = 0_u64;
+    let mut source_frame = decoder.first_frame;
     let mut decode_error = None;
     'decode: while !cancel.load(Ordering::Acquire) && range.end.is_none_or(|end| source_frame < end)
     {

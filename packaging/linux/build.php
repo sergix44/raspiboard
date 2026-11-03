@@ -91,8 +91,8 @@ if ($format !== 'deb') {
     foreach (HOST_GRAPHICS_LIBRARIES as $pattern) {
         array_push($deploy, '--exclude-library', $pattern);
     }
-    // Keyboard libraries are opened dynamically; display clients come from the host.
-    foreach (['libpipewire-0.3.so.0', 'libxkbcommon.so.0', 'libxkbcommon-x11.so.0'] as $library) {
+    // Recording and keyboard libraries are opened dynamically; display clients come from the host.
+    foreach (['libpipewire-0.3.so.0', 'libsndfile.so.1', 'libxkbcommon.so.0', 'libxkbcommon-x11.so.0'] as $library) {
         array_push($deploy, '--library', '/usr/lib/x86_64-linux-gnu/'.$library);
     }
     process($deploy, environment: [...getenv(), 'NO_STRIP' => '1']);

@@ -33,46 +33,41 @@ impl LinkBinding {
     }
 }
 
-pub struct Route {
-    links: Option<Links>,
+pub(super) struct Sink {
     _listener: pw::proxy::ProxyListener,
     _sink: pw::node::Node,
     pub id: Rc<Cell<Option<u32>>>,
     pub name: String,
     pub error: Rc<RefCell<Option<String>>>,
-    target: u32,
 }
 
-impl Route {
+impl Sink {
     pub fn new(
         core: &pw::core::CoreRc,
-        graph: &Graph,
-        target: Target,
-        sequence: u64,
+        channels: usize,
+        name: String,
+        description: &str,
     ) -> Result<Self, String> {
-        let target = graph.resolve(&target)?;
-        let channels = graph.channels(target, "in")?;
-        let positions = if channels.len() == 1 {
+        let positions = if channels == 1 {
             "[ MONO ]"
         } else {
             "[ FL FR ]"
         };
-        let name = format!("raspiboard.{}.{}", std::process::id(), sequence);
         let sink = core.create_object::<pw::node::Node>("adapter", &properties! {
             "factory.name" => "support.null-audio-sink",
             "node.name" => name.clone(),
-            "node.description" => "Raspiboard clips",
+            "node.description" => description,
             "application.id" => APP_ID,
             "node.link-group" => LOCAL_LINK_GROUP,
             "media.class" => "Audio/Sink",
             "audio.position" => positions,
-            "audio.channels" => channels.len().to_string(),
+            "audio.channels" => channels.to_string(),
             "adapter.auto-port-config" => "{ mode = dsp monitor = true position = preserve }",
             "node.virtual" => "true",
             "node.autoconnect" => "false",
             "priority.session" => "0",
             "object.linger" => "false",
-        }).map_err(|e| format!("Cannot create the clip output: {e}"))?;
+        }).map_err(|e| format!("Cannot create the audio mixer: {e}"))?;
         let id = Rc::new(Cell::new(None));
         let bound_id = id.clone();
         let error = Rc::new(RefCell::new(None));
@@ -84,21 +79,48 @@ impl Route {
             .error(move |_, _, message| *sink_error.borrow_mut() = Some(message.to_owned()))
             .register();
         Ok(Self {
-            links: None,
             _listener: listener,
             _sink: sink,
             id,
             name,
             error,
+        })
+    }
+}
+
+pub struct Route {
+    links: Option<Links>,
+    pub sink: Sink,
+    target: u32,
+}
+
+impl Route {
+    pub fn new(
+        core: &pw::core::CoreRc,
+        graph: &Graph,
+        target: Target,
+        sequence: u64,
+    ) -> Result<Self, String> {
+        let target = graph.resolve(&target)?;
+        let channels = graph.channels(target, "in")?.len();
+        let sink = Sink::new(
+            core,
+            channels,
+            format!("raspiboard.{}.{}", std::process::id(), sequence),
+            "Raspiboard clips",
+        )?;
+        Ok(Self {
+            links: None,
+            sink,
             target,
         })
     }
 
     pub fn prepare(&mut self, core: &pw::core::CoreRc, graph: &Graph) -> Result<bool, String> {
-        if let Some(error) = self.error.borrow_mut().take() {
+        if let Some(error) = self.sink.error.borrow_mut().take() {
             return Err(error);
         }
-        let Some(sink) = self.id.get() else {
+        let Some(sink) = self.sink.id.get() else {
             return Ok(false);
         };
         self.links
@@ -113,6 +135,7 @@ pub(super) struct Links {
     source: u32,
     target: u32,
     pairs: Vec<(u32, u32)>,
+    remix: bool,
 }
 
 impl Links {
@@ -123,6 +146,22 @@ impl Links {
             source,
             target,
             pairs: Vec::new(),
+            remix: false,
+        }
+    }
+
+    pub fn mixing(source: u32, target: u32) -> Self {
+        Self {
+            remix: true,
+            ..Self::new(source, target)
+        }
+    }
+
+    fn port_pairs(&self, graph: &Graph) -> Result<Vec<(u32, u32)>, String> {
+        if self.remix {
+            graph.mix_port_pairs(self.source, self.target)
+        } else {
+            graph.port_pairs(self.source, self.target)
         }
     }
 
@@ -148,7 +187,7 @@ impl Links {
             return Err(error);
         }
         if self.links.is_empty() {
-            let Ok(pairs) = graph.port_pairs(self.source, self.target) else {
+            let Ok(pairs) = self.port_pairs(graph) else {
                 return Ok(false);
             };
             for &(output, input) in &pairs {
@@ -183,7 +222,7 @@ impl Links {
             }
             self.pairs = pairs;
         }
-        if graph.port_pairs(self.source, self.target).ok().as_ref() != Some(&self.pairs) {
+        if self.port_pairs(graph).ok().as_ref() != Some(&self.pairs) {
             return Err("The application's audio channels changed. Select it again.".into());
         }
         self.links.iter().try_fold(true, |ready, link| {

@@ -95,7 +95,7 @@ function verifyPortable(string $root): void
 {
     verifyGraphicsBoundary($root);
     foreach (['AppRun', 'usr/bin/raspiboard', 'usr/share/pipewire/client.conf',
-        'usr/lib/libpipewire-0.3.so.0', 'usr/lib/spa-0.2/support/libspa-support.so',
+        'usr/lib/libpipewire-0.3.so.0', 'usr/lib/libsndfile.so.1', 'usr/lib/spa-0.2/support/libspa-support.so',
         'usr/lib/spa-0.2/audioconvert/libspa-audioconvert.so',
         'usr/share/doc/raspiboard/LICENSE', 'usr/share/doc/raspiboard/THIRD-PARTY.txt',
         'usr/share/doc/raspiboard/SYSTEM-LIBRARIES.txt',

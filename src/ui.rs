@@ -22,6 +22,7 @@ pub(crate) mod icons;
 mod options_state;
 mod passthrough;
 mod persistence;
+mod recording;
 mod reorder;
 mod settings;
 mod sound_pad;
@@ -40,6 +41,10 @@ pub struct Soundboard {
     main_hidden: bool,
     tray_available: bool,
     minimize_to_tray: bool,
+    recordings: raspiboard::recording::RecordingSettings,
+    default_recording_directory: Option<PathBuf>,
+    choosing_recording_directory: bool,
+    quitting: bool,
     settings_window: Option<window::Id>,
     options_window: Option<window::Id>,
     options_button: Option<String>,
@@ -86,6 +91,12 @@ pub enum Message {
     SelectTarget(Option<Target>),
     SelectSource(Option<Target>),
     TogglePassthrough,
+    ToggleRecording,
+    RecordingFormatChanged(raspiboard::recording::RecordingFormat),
+    ChooseRecordingDirectory,
+    RecordingDirectoryChosen(Option<PathBuf>),
+    ResetRecordingDirectory,
+    RecordingFinished(Result<(), String>),
     OpenButtonMenu(String),
     OpenButtonOptions(String),
     CloseButtonOptions,
@@ -239,6 +250,39 @@ impl Soundboard {
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            Message::ToggleRecording => {
+                if let Some(command) = self.recording_command() {
+                    self.send(command);
+                }
+            }
+            Message::RecordingFormatChanged(format) => {
+                self.recordings.format = format;
+                return self.save_settings();
+            }
+            Message::ChooseRecordingDirectory => return self.choose_recording_directory(),
+            Message::RecordingDirectoryChosen(directory) => {
+                self.choosing_recording_directory = false;
+                if let Some(directory) = directory {
+                    self.recordings.directory = Some(directory);
+                    return self.save_settings();
+                }
+            }
+            Message::ResetRecordingDirectory => {
+                self.recordings.directory = None;
+                return self.save_settings();
+            }
+            Message::RecordingFinished(result) => {
+                self.quitting = false;
+                match result {
+                    Ok(()) => return self.finish_quit(),
+                    Err(error) => {
+                        self.error = Some(error);
+                        if self.main_window.is_none() {
+                            return self.open_main();
+                        }
+                    }
+                }
+            }
             Message::Hotkeys(event) => return self.hotkey_event(event),
             Message::OpenSettings => {
                 self.reorder = None;
@@ -505,7 +549,14 @@ impl Soundboard {
 
     pub fn view(&self, window: window::Id) -> Element<'_, Message> {
         if self.settings_window == Some(window) {
-            return settings::view(self.theme, self.sound_button_scale, self.minimize_to_tray);
+            return settings::view(
+                self.theme,
+                self.sound_button_scale,
+                self.minimize_to_tray,
+                &self.recordings,
+                self.recording_directory(),
+                self.choosing_recording_directory,
+            );
         }
         if self.options_window == Some(window) {
             return self.options_view();
@@ -561,6 +612,7 @@ impl Soundboard {
                 sound_pad::Tone::Stop,
                 false,
             ),
+            self.record_button(),
         ]
         .spacing(10);
         let footer = row![
@@ -569,10 +621,10 @@ impl Soundboard {
             space::horizontal(),
             self.routing_controls(),
             sound_pad::animated(
-                button(icon(Icon::Settings).size(16))
-                    .width(32)
-                    .height(32)
-                    .padding(4)
+                button(icon(Icon::Settings).size(28))
+                    .width(64)
+                    .height(64)
+                    .padding(8)
                     .on_press(Message::OpenSettings),
                 true,
                 false,
@@ -581,6 +633,12 @@ impl Soundboard {
         .spacing(12)
         .align_y(Alignment::Center);
         let mut content = column![sounds].spacing(12);
+        if let Some(status) = self.recording_status_text() {
+            content = content.push(
+                container(text(status).size(12).style(text::secondary))
+                    .padding([0.0, CONTENT_PADDING]),
+            );
+        }
         for error in [
             self.storage_error.as_ref(),
             self.error.as_ref().or(self.audio.error.as_ref()),

@@ -22,6 +22,7 @@ pub enum Action {
     CancelColor,
     ColorPicked(Color),
     ResetColor,
+    PrefillFilename,
     Gain(f32),
     Overlap(bool),
     Start(String),
@@ -90,7 +91,7 @@ impl Soundboard {
         let worker = std::thread::Builder::new()
             .name("waveform-analysis".into())
             .spawn(move || {
-                let result = audio::waveform::analyze(&source, &cancel).map(Arc::new);
+                let result = audio::waveform::analyze(&source, &cancel);
                 let _ = sender.send_blocking(result);
             });
         if let Err(error) = worker {
@@ -190,6 +191,15 @@ impl Soundboard {
             return Task::none();
         };
         match action {
+            Action::PrefillFilename => {
+                let name = self.buttons[index]
+                    .full_path
+                    .as_deref()
+                    .and_then(Path::file_stem)
+                    .and_then(|name| name.to_str())
+                    .map(str::to_owned);
+                return name.map_or_else(Task::none, |name| self.change_button_name(&id, name));
+            }
             Action::SetHotkey => {
                 self.sync_hotkeys(Some(id));
                 return Task::none();
@@ -419,6 +429,8 @@ impl Soundboard {
                     id: id.clone(),
                     name
                 })
+                .size(16)
+                .line_height(iced::Pixels(20.0))
                 .padding(iced::Padding {
                     right: 42.0,
                     ..iced::Padding::new(10.0)
@@ -443,19 +455,45 @@ impl Soundboard {
             .map(|p| p.display().to_string())
             .unwrap_or_else(|| "No sound assigned".into());
         let db = record.relative_volume.unwrap_or(0.0);
-        let mut controls = column![
-            text("Name").size(14),
-            row![picker, name].spacing(12).align_y(iced::Center),
+        let can_prefill = record
+            .full_path
+            .as_deref()
+            .and_then(Path::file_stem)
+            .and_then(|name| name.to_str())
+            .is_some();
+        let color = column![
+            space().height(24),
+            picker,
+            button(text("Reset").size(10).width(Fill).center())
+                .on_press(event(Action::ResetColor))
+                .width(40)
+                .height(20)
+                .padding(0)
+                .style(button::text),
+        ]
+        .spacing(8)
+        .width(40);
+        let name = column![
             row![
-                text("Leave empty to use the filename.")
-                    .size(12)
-                    .style(text::secondary),
+                text("Name").size(14),
                 space::horizontal(),
-                button(text("Theme color").size(12))
-                    .on_press(event(Action::ResetColor))
-                    .style(button::text)
+                button(text("Prefill filename").size(12))
+                    .on_press_maybe(can_prefill.then(|| event(Action::PrefillFilename)))
+                    .height(24)
+                    .padding([0, 4])
+                    .style(button::text),
             ]
+            .height(24)
             .align_y(iced::Center),
+            name,
+            text("Leave empty to use the filename.")
+                .size(12)
+                .style(text::secondary),
+        ]
+        .spacing(8)
+        .width(Fill);
+        let mut controls = column![
+            row![color, name].spacing(12).align_y(iced::Top),
             text(format!("Path: {path}"))
                 .size(13)
                 .wrapping(text::Wrapping::Glyph),

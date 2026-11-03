@@ -13,8 +13,8 @@ Right-click a pad and choose **Options** to edit it:
 
 | Setting | What it does |
 | --- | --- |
-| Name | Adds a custom label. Clear it to use the filename again. |
-| Color | Sets the pad color. Theme color restores its default appearance. |
+| Name | Adds a custom label. Clear it to use the filename again; Prefill filename copies the filename without its extension into the field for editing. |
+| Color | Sets the pad color. Reset below the picker restores its default appearance. |
 | Relative Volume | Adjusts this sound from −15 to +15 dB, on top of the master volumes. |
 | Crop | Selects the part of the source to play. |
 | Overlap Mode | Adds a new playback instance on every trigger. |
@@ -83,6 +83,48 @@ destination, or losing the audio connection, also turns it off. If a browser
 recreates its playback stream between videos, select its new stream and enable
 passthrough again. Pausing a source while its stream remains open keeps sharing
 enabled. Mono and stereo sources are supported.
+
+## Recording desktop audio
+
+Click the red **Record** button beside the blue Stop button to record the default
+speakers/headphones mix together with your default microphone. Once capture connects, Record blinks red with the same
+one-second on/off rhythm and brief filament fade as passthrough. Click Record
+again to finish and save; the saved file's path appears above the toolbar.
+Starting and saving have their own status text. Wait for saving to finish before
+starting another recording.
+
+**Stop affects clip playback only.** Recording continues through clip Pause,
+Stop, pad changes, file picking, Options Preview and passthrough changes. The
+default microphone is mixed into the recording without being played through
+your speakers. If it is already monitored into the desktop output, its existing
+feed is used so it is not added twice. Both default devices must be available.
+Remote-only sound and audio sent to other output devices are not included.
+The output monitor follows PipeWire's existing volume/mute configuration;
+Raspiboard does not change the system listening volume to make a recording.
+
+In **Settings → Recordings**, choose **FLAC** (default), **WAV**, or **Ogg Vorbis**,
+and use **Choose folder** to select the output folder. **Use default folder**
+restores `~/.raspiboard/recordings/`. Preferences save automatically and apply to
+the next recording; an active file keeps its original format and location.
+Files have unique names and the chosen extension. Existing recordings are never
+moved or overwritten, and no pad is added automatically.
+
+Capture uses 48 kHz stereo. FLAC and WAV preserve 24-bit PCM; Ogg Vorbis is lossy.
+The WAV size limit is about four hours at this format. Encoding or disk errors,
+including a full capture queue, stop recording and show an error rather than
+silently dropping audio. A partial file is finalized where possible, and the
+error includes its path. A recording stopped before receiving audio leaves no
+empty file.
+
+Closing to the tray keeps recording. A normal Quit waits for the recording to
+finish saving; if that fails, the window remains available with an error. Losing
+the audio output, microphone, or PipeWire connection stops recording; changing
+the default output or input, or changing microphone monitoring, also stops
+recording with a visible message. Reconnection does not
+resume it. Recording always starts off after launch.
+
+The Settings cog and all three transport buttons are 64×64. Settings remains
+available while recording.
 
 ## Crop and preview
 

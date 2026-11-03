@@ -112,7 +112,10 @@ fn colors(theme: &Theme, enabled: bool, playing: bool, tone: Tone) -> iced::them
             iced::color!(0xfacc15),
             Color::BLACK,
         )),
-        Tone::Stop => Some(palette.danger.base),
+        Tone::Stop => Some(iced::theme::palette::Pair::new(
+            iced::color!(0x7dd3fc),
+            Color::BLACK,
+        )),
         Tone::Accent => None,
     };
     if let Some(mut pair) = colored {

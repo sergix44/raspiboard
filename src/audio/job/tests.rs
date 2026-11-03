@@ -1,4 +1,105 @@
 use super::*;
+
+#[test]
+#[ignore = "Run with RASPIBOARD_PROFILE_INPUT pointing to a local JSON profile fixture"]
+fn profile_audio_preparation_and_waveform() {
+    let fixture = std::env::var("RASPIBOARD_PROFILE_INPUT").expect("profile fixture path");
+    let entries: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(fixture).unwrap()).unwrap();
+    for entry in entries.as_array().unwrap() {
+        let path = std::path::PathBuf::from(entry["path"].as_str().unwrap());
+        let options = PlaybackOptions {
+            start_ms: entry["start_ms"].as_u64(),
+            end_ms: entry["end_ms"].as_u64(),
+            relative_volume: None,
+        };
+        let cancelled = AtomicBool::new(false);
+        let start = std::time::Instant::now();
+        let waveform = crate::audio::waveform::analyze(&path, &cancelled).unwrap();
+        let waveform_ms = start.elapsed().as_secs_f64() * 1000.0;
+        let start = std::time::Instant::now();
+        let (mut prepared, range) = prepare(path.clone(), options, &cancelled).unwrap();
+        let preparation_ms = start.elapsed().as_secs_f64() * 1000.0;
+        let cache_start = std::time::Instant::now();
+        let cached = crate::audio::waveform::analyze(&path, &cancelled).unwrap();
+        let cached_ms = cache_start.elapsed().as_secs_f64() * 1000.0;
+        assert!(std::sync::Arc::ptr_eq(&waveform, &cached));
+        let mut linear = ClipDecoder::open(
+            Box::new(File::open(&path).unwrap()),
+            path.extension().and_then(|extension| extension.to_str()),
+        )
+        .unwrap();
+        let channels = linear.channels;
+        let collect = |decoder: &mut ClipDecoder, mut position: u64| {
+            let mut selected = Vec::new();
+            while selected.len() < 2048 {
+                let Some(samples) = decoder.next_samples().unwrap() else {
+                    break;
+                };
+                for frame in samples.chunks_exact(channels) {
+                    if position >= range.start && selected.len() < 2048 {
+                        selected.extend_from_slice(frame);
+                    }
+                    position += 1;
+                }
+            }
+            selected
+        };
+        let expected = collect(&mut linear, 0);
+        let position = prepared.first_frame;
+        let selected = collect(&mut prepared, position);
+        assert_eq!(selected.len(), expected.len());
+        let error = selected
+            .iter()
+            .zip(&expected)
+            .map(|(a, b)| (a - b).abs())
+            .sum::<f32>()
+            / selected.len() as f32;
+        assert!(
+            error < 0.001,
+            "seeking shifted decoded crop audio by {error}"
+        );
+        eprintln!(
+            "profile codec={} duration_ms={} crop_start_ms={:?} crop_end_ms={:?} waveform_ms={:.2} preparation_ms={:.2} cached_waveform_ms={:.3} seek_error={:.8}",
+            entry["extension"],
+            waveform.duration_ms,
+            options.start_ms,
+            options.end_ms,
+            waveform_ms,
+            preparation_ms,
+            cached_ms,
+            error
+        );
+    }
+}
+
+#[test]
+fn cropped_playback_uses_container_duration_and_seeks_near_the_start() {
+    let source: Vec<_> = (0..96_000).map(|n| (n % 16000) as i16).collect();
+    let (_directory, path) = source_file(&source);
+    let options = PlaybackOptions {
+        start_ms: Some(1500),
+        end_ms: Some(1600),
+        relative_volume: None,
+    };
+    let (mut decoder, range) = prepare(path, options, &AtomicBool::new(false)).unwrap();
+    assert!(
+        decoder.first_frame > 0,
+        "the crop must seek rather than decode from the beginning"
+    );
+    assert!(decoder.first_frame <= range.start);
+    let (producer, mut samples) = rtrb::RingBuffer::new(8192);
+    produce(
+        &mut decoder,
+        &mut [producer],
+        &AtomicBool::new(false),
+        range,
+    )
+    .unwrap();
+    let frames: Vec<_> = std::iter::from_fn(|| samples.pop().ok()).collect();
+    assert_eq!(frames.len(), 4800);
+    assert_eq!(frames[500], [source[72_500] as f32 / 32768.0; 2]);
+}
 use std::io::Cursor;
 
 fn decoder(channels: u16, samples: &[i16]) -> ClipDecoder {

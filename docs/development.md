@@ -13,7 +13,7 @@ such as WirePlumber.
 Install the native build dependencies on Debian or Ubuntu:
 
 ```sh
-sudo apt install build-essential cmake pkg-config clang libclang-dev libpipewire-0.3-dev libspa-0.2-dev
+sudo apt install build-essential cmake pkg-config clang libclang-dev libpipewire-0.3-dev libspa-0.2-dev libsndfile1
 ```
 
 The file picker uses the desktop's file dialog through XDG Desktop Portal. Use
@@ -121,6 +121,8 @@ cargo test --locked
 Automated tests cover concurrent playback requests, group cancellation and transport,
 application passthrough discovery and endpoint loss, bounded live capture,
 remote gain, circular capture buffers, and active blink redraws,
+recording encoders for FLAC/WAV/Ogg, recording-folder preferences, writer draining,
+silence preservation, queue faults and independent recording transport,
 overlap persistence, crop boundaries and gain, bounded waveform summaries,
 waveform selection, stale analysis results, color/reset persistence, microphone-path discovery, channel mapping, reused stream
 IDs, stale playback commands, Audio decoding into both outputs, independent gains,
@@ -135,6 +137,12 @@ settings/button round trips, grid ordering, malformed-file preservation, atomic
 writes, shutdown flushing, and independent save-error recovery. They also check
 that restoring saved data does not start playback or select a recording target.
 These tests do not connect to a live audio server or open a window.
+An ignored headless timing test accepts a local JSON array containing `path`,
+`extension`, `start_ms` and `end_ms` entries. Keep that fixture under test-results
+and run `RASPIBOARD_PROFILE_INPUT=test-results/recording/performance-input.json
+cargo test --locked --lib profile_audio_preparation_and_waveform -- --ignored
+--nocapture`. It measures waveform/crop preparation, verifies cached reuse and
+compares seeked samples against linear decoding without playing audio.
 Single-instance tests cover competing owners, leftover lock files, filesystem
 errors, and lock release after a separate owner process is terminated.
 Hotkey tests cover session membership, held-key suppression, assignment and Clear,

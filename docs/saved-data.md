@@ -15,9 +15,25 @@ The first launch creates this layout in your home directory:
 `local_volume`, `volumes_linked`, and `sound_button_scale` (50–200, default 100).
 `minimize_to_tray` is a boolean, defaulting to false when absent, that keeps the
 app running in the desktop tray when closing the main window.
-A missing theme setting uses Deck; Use default saves Deck explicitly. Built-in
+A missing theme setting uses Deck; Default theme saves Deck explicitly. Built-in
 Iced theme names and arbitrary theme names are rejected, with invalid settings
 files preserved by the existing error handling.
+
+Recording preferences use a `[recordings]` section:
+
+```toml
+[recordings]
+format = "flac"
+# directory = "/home/you/Recordings"
+```
+
+`format` is `flac` (default), `wav`, or `ogg` (Vorbis). An omitted `directory`
+uses `~/.raspiboard/recordings/`; a custom directory must be absolute. Existing
+settings files without the section receive these defaults. The recordings
+folder is created when a recording starts. Unique `recording-<UUIDv7>` filenames
+have the chosen extension, and preferences affect only subsequent recordings.
+Recording files are audio assets; back them up alongside settings and original
+sounds. Changing the output folder does not move previous files.
 
 Each category file contains its identity, display name, and sound entries:
 

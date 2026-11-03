@@ -2,6 +2,22 @@ use super::*;
 use std::{fs, path::Path};
 
 #[test]
+fn recording_settings_default_old_files_to_flac_and_roundtrip_a_custom_directory() {
+    use crate::recording::RecordingFormat;
+    let mut settings: Settings = toml::from_str("remote_volume = 75").unwrap();
+    assert_eq!(settings.recordings.format, RecordingFormat::Flac);
+    assert!(settings.recordings.directory.is_none());
+    settings.recordings.format = RecordingFormat::Ogg;
+    settings.recordings.directory = Some("/sounds/my recordings".into());
+    let text = toml::to_string(&settings).unwrap();
+    assert!(text.contains("[recordings]"));
+    assert_eq!(toml::from_str::<Settings>(&text).unwrap(), settings);
+    assert!(toml::from_str::<Settings>("[recordings]\nformat = 'invalid'").is_err());
+    settings.recordings.directory = Some("relative/folder".into());
+    assert!(validate_settings(&settings).is_err());
+}
+
+#[test]
 fn fresh_store_uses_a_category_file_with_uuidv7_ids_and_complete_entry_metadata() {
     let dir = fixture();
     let state = Store::new(dir.path()).load_or_create().unwrap();

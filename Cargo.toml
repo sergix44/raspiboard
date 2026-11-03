@@ -47,6 +47,7 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 ashpd = { version = "0.13.13", default-features = false, features = ["async-io", "global_shortcuts"] }
+ksni = { version = "0.3", default-features = false, features = ["async-io"] }
 pipewire = { version = "0.10.1", features = ["v0_3_65"] }
 zbus = { version = "5.19", default-features = false, features = ["async-io"] }
 

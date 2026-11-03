@@ -57,6 +57,9 @@ impl Soundboard {
             reorder: None,
             theme: saved.settings.theme,
             main_window: None,
+            main_hidden: false,
+            tray_available: false,
+            minimize_to_tray: saved.settings.minimize_to_tray,
             settings_window: None,
             options_window: None,
             options_button: None,
@@ -91,6 +94,7 @@ impl Soundboard {
             local_volume: self.local_volume,
             volumes_linked: self.volumes_linked,
             sound_button_scale: self.sound_button_scale,
+            minimize_to_tray: self.minimize_to_tray,
         }))
     }
 

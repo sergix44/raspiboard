@@ -30,13 +30,23 @@ pub(super) fn window_settings() -> window::Settings {
 impl Soundboard {
     pub fn start() -> (Self, Task<Message>) {
         let mut board = Self::boot();
+        let open = board.open_main();
+        (board, open)
+    }
+
+    pub(super) fn open_main(&mut self) -> Task<Message> {
+        if let Some(id) = self.main_window {
+            return window::minimize(id, false).chain(window::gain_focus(id));
+        }
         let (id, open) = window::open(window::Settings {
             size: Size::new(1100.0, 680.0),
             min_size: Some(Size::new(1000.0, 360.0)),
+            exit_on_close_request: false,
             ..window_settings()
         });
-        board.main_window = Some(id);
-        (board, open.discard())
+        self.main_window = Some(id);
+        self.main_hidden = false;
+        open.discard()
     }
 
     pub fn title(&self, id: window::Id) -> String {

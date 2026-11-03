@@ -21,6 +21,7 @@ pub struct Settings {
     pub local_volume: u8,
     pub volumes_linked: bool,
     pub sound_button_scale: u16,
+    pub minimize_to_tray: bool,
 }
 
 impl Default for Settings {
@@ -31,6 +32,7 @@ impl Default for Settings {
             local_volume: 100,
             volumes_linked: false,
             sound_button_scale: 100,
+            minimize_to_tray: false,
         }
     }
 }

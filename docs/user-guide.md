@@ -140,3 +140,18 @@ One instance runs per user data directory. A second launch exits with
 `Raspiboard is already running.` without interrupting the existing instance.
 Do not delete `~/.raspiboard/instance.lock` while the app is running. A leftover
 lock file after closing the app is normal.
+
+## System tray
+
+Enable **Minimize to tray on close** in Settings to keep Raspiboard running when
+you close the main window. The setting saves immediately and defaults to off.
+Audio playback, routing, and global shortcuts continue while the window is closed.
+Settings and Sound options close with the main window.
+
+Click the tray icon or choose **Show Raspiboard** from its menu to reopen the
+board. Choose **Quit** to exit and finish pending saves, regardless of the toggle.
+The tray icon is available whenever the desktop supports StatusNotifierItem, on
+both Wayland and X11. GNOME needs a tray extension such as AppIndicator support.
+If no tray is available at startup, closing the main window exits normally; restart
+after enabling desktop tray support. If the tray host disappears while the board
+is closed, Raspiboard reopens the window so you can still reach it.

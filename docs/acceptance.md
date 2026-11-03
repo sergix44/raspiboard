@@ -644,3 +644,28 @@ stop and linked/unlinked volumes retain their behavior. Close and reopen a targe
 recording stream: the stale selection must not route to a reused node. Configure,
 activate and cancel a global shortcut and verify retry behavior. This refactor
 adds no Windows runtime support or settings migration.
+
+## System tray and close behavior
+
+Run `cargo run --locked` in your graphical desktop session. Test on Wayland and
+X11 where available, with a desktop supporting StatusNotifierItem (for example,
+KDE Plasma or GNOME with an AppIndicator extension).
+
+1. Leave **Minimize to tray on close** off. Expect the Raspiboard tray icon and
+   Show Raspiboard/Quit menu. Close the main window; expect the process to exit
+   and the tray icon to disappear.
+2. Relaunch, enable the toggle in Settings, assign a global shortcut, and start
+   a long sound. Close the main window while Settings/Sound options are open.
+   Expect all app windows to close while audio and routing continue. Trigger
+   the shortcut; expect playback without reopening the board.
+3. Click the tray icon or choose **Show Raspiboard**. Expect one main window with
+   the same assignments, settings, volumes, routing target, and playback state.
+   Repeat hide/show and choose Show while already visible; expect one window.
+4. Choose **Quit** while the window is closed to the tray. Expect the process to
+   exit and the icon to disappear. Relaunch; expect the toggle to remain enabled.
+   Disable it, relaunch, and verify closing exits again.
+5. With the board closed to the tray, disable the desktop tray host/extension.
+   Expect the main window to reopen. On a session without tray support, enable
+   the setting and close the main window; expect the process to exit normally.
+6. Close only Settings or Sound options using their title-bar buttons. Expect
+   the main window to remain open, regardless of the tray preference.

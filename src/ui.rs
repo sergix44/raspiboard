@@ -26,6 +26,7 @@ mod settings;
 mod sound_pad;
 #[cfg(test)]
 mod test_renderer;
+mod tray;
 mod volume_slider;
 mod waveform;
 mod windows;
@@ -35,6 +36,9 @@ const CONTENT_PADDING: f32 = 12.0;
 pub struct Soundboard {
     theme: ThemeChoice,
     main_window: Option<window::Id>,
+    main_hidden: bool,
+    tray_available: bool,
+    minimize_to_tray: bool,
     settings_window: Option<window::Id>,
     options_window: Option<window::Id>,
     options_button: Option<String>,
@@ -67,6 +71,9 @@ pub enum Message {
     OpenSettings,
     CloseSettings,
     WindowClosed(window::Id),
+    WindowCloseRequested(window::Id),
+    MinimizeToTrayChanged(bool),
+    Tray(tray::Event),
     EscapePressed(window::Id),
     ThemeChanged(ThemeChoice),
     SoundButtonScaleChanged(u16),
@@ -143,6 +150,8 @@ impl Soundboard {
         Subscription::batch([
             Subscription::run(audio::events).map(Message::Audio),
             self.hotkey_subscription(),
+            Subscription::run(tray::events).map(Message::Tray),
+            window::close_requests().map(Message::WindowCloseRequested),
             window::close_events().map(Message::WindowClosed),
             event::listen_with(|event, _status, window| match event {
                 iced::Event::Keyboard(keyboard::Event::KeyPressed {
@@ -235,15 +244,15 @@ impl Soundboard {
                 return self.open_settings();
             }
             Message::CloseSettings => return self.close_settings(),
+            Message::WindowCloseRequested(id) => return self.close_requested(id),
+            Message::Tray(event) => return self.tray_event(event),
+            Message::MinimizeToTrayChanged(enabled) => {
+                self.minimize_to_tray = enabled;
+                return self.save_settings();
+            }
             Message::WindowClosed(id) => {
                 if self.main_window == Some(id) {
-                    self.reorder = None;
-                    self.main_window = None;
-                    self.settings_window = None;
-                    self.options_window = None;
-                    self.options_button = None;
-                    self.options.cancel_analysis();
-                    return iced::exit();
+                    return self.quit();
                 }
                 if self.settings_window == Some(id) {
                     self.settings_window = None;
@@ -483,7 +492,7 @@ impl Soundboard {
 
     pub fn view(&self, window: window::Id) -> Element<'_, Message> {
         if self.settings_window == Some(window) {
-            return settings::view(self.theme, self.sound_button_scale);
+            return settings::view(self.theme, self.sound_button_scale, self.minimize_to_tray);
         }
         if self.options_window == Some(window) {
             return self.options_view();

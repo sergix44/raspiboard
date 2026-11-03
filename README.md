@@ -95,7 +95,9 @@ menu integration, removal, and building your own packages.
    color, volume, crop, overlap behavior, or hotkey.
 
 Hold the **middle mouse button** on a pad and drag it onto another pad to
-reorder the board. Open the **settings cog** to change the theme or pad size.
+reorder the board. Open the **settings cog** to change the theme or pad size, or
+enable **Minimize to tray on close**. The tray menu offers **Show Raspiboard** and
+**Quit**; audio and global shortcuts keep working while the window is closed.
 
 For crop controls, overlap behavior, shortcuts, and troubleshooting, see the
 [user guide](docs/user-guide.md).

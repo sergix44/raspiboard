@@ -35,7 +35,8 @@ the framework and its dependencies, so it takes longer than subsequent builds.
 Raspiboard allows one running instance per user data directory. Before opening a
 window or starting workers, it takes an exclusive operating-system file lock on
 `~/.raspiboard/instance.lock`. A second launch prints `Raspiboard is already running.`
-and exits successfully. Closing the app or terminating its process releases the
+and exits successfully, including while the main window is closed to the tray.
+Quitting the app or terminating its process releases the
 lock automatically, including after a crash. The lock file stays on disk and must
 not be deleted while the app is running. Locking uses Rust's standard library on
 Unix and Windows and does not require D-Bus. Filesystem or locking errors stop
@@ -153,3 +154,20 @@ settings still apply.
 - [Linux packaging](packaging.md)
 - [Bundled fonts and their licenses](../assets/fonts/README.md)
 - [Vendored Wayland icon support](../vendor/winit/PATCHES.md)
+
+## Tray lifecycle
+
+`src/ui/tray.rs` exposes a ksni StatusNotifierItem through an iced subscription,
+with the embedded application icon and Show/Quit actions. ksni uses the existing
+async-io runtime family and requires no GTK or AppIndicator native libraries.
+`src/ui/windows.rs` disables automatic close on the main window; close requests
+pass through the UI message handler. When close-to-tray is enabled and the tray
+host is available, the native windows close while the daemon, audio, hotkeys, and
+persistence writer remain alive. Show creates a new main window using the retained
+board state. Closing and recreating works on Wayland, where winit cannot hide an
+existing window. Loss of the tray host reopens the main window automatically.
+
+The automated suite covers enabled/disabled close behavior, missing tray support,
+restoring the board, tray host loss, explicit Quit, and preference persistence.
+Live tray rendering and desktop integration are covered in the manual acceptance
+checks.

@@ -1,10 +1,16 @@
 use super::{Message, sound_pad, volume_slider};
-use iced::widget::{button, column, container, pick_list, row, scrollable, slider, space, text};
+use iced::widget::{
+    button, checkbox, column, container, pick_list, row, scrollable, slider, space, text,
+};
 use iced::{Element, Fill};
 use raspiboard::storage::{MAX_SOUND_BUTTON_SCALE, MIN_SOUND_BUTTON_SCALE};
 use raspiboard::theme::ThemeChoice;
 
-pub(super) fn view(theme: ThemeChoice, sound_button_scale: u16) -> Element<'static, Message> {
+pub(super) fn view(
+    theme: ThemeChoice,
+    sound_button_scale: u16,
+    minimize_to_tray: bool,
+) -> Element<'static, Message> {
     let controls = column![
         column![
             text("Theme").size(14),
@@ -34,6 +40,15 @@ pub(super) fn view(theme: ThemeChoice, sound_button_scale: u16) -> Element<'stat
             .height(22)
             .width(Fill)
             .style(volume_slider::style),
+        ]
+        .spacing(8),
+        column![
+            checkbox(minimize_to_tray)
+                .label("Minimize to tray on close")
+                .on_toggle(Message::MinimizeToTrayChanged),
+            text("Keep audio and global shortcuts running. Quit from the tray menu.")
+                .size(13)
+                .style(text::secondary),
         ]
         .spacing(8),
         text("Changes apply immediately.")

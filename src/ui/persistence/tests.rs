@@ -131,6 +131,7 @@ fn reopening_restores_settings_and_grid_order_without_starting_audio() {
             local_volume: 65,
             volumes_linked: false,
             sound_button_scale: 100,
+            minimize_to_tray: false,
         })
         .unwrap();
     store
@@ -577,4 +578,20 @@ fn overlap_mode_can_be_enabled_and_disabled_and_survives_reopening() {
     });
     drop(board);
     assert!(!Soundboard::from_store(store).buttons[0].overlap);
+}
+
+#[test]
+fn close_to_tray_preference_survives_restart_and_other_settings_changes() {
+    let dir = directory();
+    let store = Store::new(dir.path());
+    let mut board = Soundboard::from_store(store.clone());
+    assert!(!board.minimize_to_tray);
+    let _ = board.update(Message::MinimizeToTrayChanged(true));
+    let _ = board.update(Message::ThemeChanged(ThemeChoice::Console));
+    drop(board);
+    let mut board = Soundboard::from_store(store.clone());
+    assert!(board.minimize_to_tray);
+    let _ = board.update(Message::MinimizeToTrayChanged(false));
+    drop(board);
+    assert!(!Soundboard::from_store(store).minimize_to_tray);
 }

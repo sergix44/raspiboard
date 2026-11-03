@@ -893,3 +893,57 @@ fn target_choice_displays_backend_label_without_interpreting_identity() {
     };
     assert_eq!(TargetChoice(Some(target)).to_string(), "Default microphone");
 }
+
+#[test]
+fn close_to_tray_keeps_playback_and_restores_the_board() {
+    let mut board = default_board();
+    let main = window::Id::unique();
+    board.main_window = Some(main);
+    let buttons = board.buttons.clone();
+    board.audio.playback = PlaybackStatus::Playing;
+    let _ = board.update(Message::MinimizeToTrayChanged(true));
+    let _ = board.update(Message::Tray(tray::Event::Available(true)));
+    let _ = board.update(Message::WindowCloseRequested(main));
+    assert!(board.main_hidden);
+    assert!(board.main_window.is_none());
+    assert_eq!(board.buttons, buttons);
+    assert_eq!(board.audio.playback, PlaybackStatus::Playing);
+    let _ = board.update(Message::WindowClosed(main));
+    assert!(board.main_hidden);
+    let _ = board.update(Message::Tray(tray::Event::Show));
+    let restored = board.main_window;
+    let _ = board.update(Message::WindowClosed(main));
+    let _ = board.update(Message::Tray(tray::Event::Show));
+    assert_eq!(board.main_window, restored);
+    assert!(!board.main_hidden);
+    assert!(board.main_window.is_some());
+}
+
+#[test]
+fn close_requests_exit_without_a_tray_or_when_the_option_is_off() {
+    for (enabled, available) in [(true, false), (false, true), (false, false)] {
+        let mut board = default_board();
+        let main = window::Id::unique();
+        board.main_window = Some(main);
+        let _ = board.update(Message::MinimizeToTrayChanged(enabled));
+        let _ = board.update(Message::Tray(tray::Event::Available(available)));
+        let _ = board.update(Message::WindowCloseRequested(main));
+        assert!(board.main_window.is_none());
+        assert!(!board.main_hidden);
+    }
+}
+
+#[test]
+fn tray_loss_restores_a_hidden_window_and_quit_exits_even_when_enabled() {
+    let mut board = default_board();
+    let main = window::Id::unique();
+    board.main_window = Some(main);
+    let _ = board.update(Message::MinimizeToTrayChanged(true));
+    let _ = board.update(Message::Tray(tray::Event::Available(true)));
+    let _ = board.update(Message::WindowCloseRequested(main));
+    let _ = board.update(Message::Tray(tray::Event::Available(false)));
+    assert!(!board.main_hidden);
+    assert!(board.main_window.is_some());
+    let _ = board.update(Message::Tray(tray::Event::Quit));
+    assert!(board.main_window.is_none());
+}

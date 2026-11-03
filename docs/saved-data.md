@@ -13,6 +13,8 @@ The first launch creates this layout in your home directory:
 
 `settings.toml` stores `theme = "Deck"` or `theme = "Console"`, `remote_volume`,
 `local_volume`, `volumes_linked`, and `sound_button_scale` (50–200, default 100).
+`minimize_to_tray` is a boolean, defaulting to false when absent, that keeps the
+app running in the desktop tray when closing the main window.
 A missing theme setting uses Deck; Use default saves Deck explicitly. Built-in
 Iced theme names and arbitrary theme names are rejected, with invalid settings
 files preserved by the existing error handling.

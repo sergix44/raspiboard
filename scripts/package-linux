@@ -8,17 +8,23 @@ require dirname(__DIR__).'/packaging/linux/common.php';
 use function Raspiboard\Packaging\copyTree;
 use function Raspiboard\Packaging\directory;
 use function Raspiboard\Packaging\process;
+use function Raspiboard\Packaging\packagePatterns;
 
 $json = in_array('--json', $argv, true);
 $root = dirname(__DIR__);
 $engine = 'podman';
 $jobs = '2';
+$format = 'all';
 $stage = 'arguments';
 $log = null;
 
 try {
     for ($index = 1; $index < $argc; $index++) {
         switch ($argv[$index]) {
+            case '--format':
+                $format = $argv[++$index] ?? '';
+                packagePatterns($format);
+                break;
             case '--engine':
                 $engine = $argv[++$index] ?? '';
                 if (!in_array($engine, ['podman', 'docker'], true)) {
@@ -35,7 +41,7 @@ try {
             case '--plain':
                 break;
             case '--help':
-                echo "Usage: ./scripts/package-linux [--engine podman|docker] [--jobs N] [--plain|--json]\n";
+                echo "Usage: ./scripts/package-linux [--format all|deb|appimage] [--engine podman|docker] [--jobs N] [--plain|--json]\n";
                 echo "Builds and checks Debian 13 / Ubuntu 26.04 x86-64 packages. Requires PHP 8.2+ and a working container engine.\n";
                 exit(0);
             default:
@@ -86,6 +92,7 @@ try {
         '--volume', $target.'/packaging/cache:/cache',
         '--env', 'CARGO_HOME=/cache/cargo', '--env', 'CARGO_TARGET_DIR=/cache/target',
         '--env', 'CARGO_BUILD_JOBS='.$jobs,
+        '--env', 'RASPIBOARD_PACKAGE_FORMAT='.$format,
         $image, 'php', '/source/packaging/linux/build.php');
     process($arguments, log: $log);
 
@@ -97,7 +104,7 @@ try {
             'apt-get update && apt-get install -y --no-install-recommends php-cli ca-certificates binutils && php /output/source/packaging/linux/check.php /output/artifacts'], log: $log);
     }
     $stage = 'publish local downloads';
-    foreach (['*.deb', '*.AppImage', 'SHA256SUMS'] as $pattern) {
+    foreach ([...packagePatterns($format), 'SHA256SUMS'] as $pattern) {
         if (count(glob($run.'/artifacts/'.$pattern)) !== 1) {
             throw new RuntimeException('Expected exactly one '.$pattern.' in the verified output');
         }

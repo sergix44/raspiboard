@@ -106,6 +106,11 @@ dependency. Building it requires CMake and the C toolchain listed above.
 
 ## Checks
 
+The GitHub workflow runs the application unit tests with `cargo test --release
+--locked --target x86_64-unknown-linux-gnu --lib --bins` before starting either
+package job. Those jobs also run the full application test suite, formatting,
+Clippy, and PHP packaging checks.
+
 ```sh
 cargo fmt --check
 cargo clippy --locked --all-targets -- -D warnings

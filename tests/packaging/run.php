@@ -31,6 +31,10 @@ $tests = [
         [$status, $output] = command([PHP_BINARY, $root.'/scripts/package-linux', '--engine', 'shell']);
         check($status === 2 && str_contains($output, 'podman or docker'), $output);
     },
+    'unsupported package formats are rejected' => function () use ($root): void {
+        [$status, $output] = command([PHP_BINARY, $root.'/scripts/package-linux', '--format', 'rpm']);
+        check($status === 2 && str_contains($output, 'all, deb or appimage'), $output);
+    },
     'failed build preserves downloads in a checkout with spaces' => function () use ($root, $workspace): void {
         $checkout = $workspace.'/checkout with spaces';
         mkdir($checkout.'/scripts', 0755, true);
@@ -98,9 +102,9 @@ foreach (['mismatch', 'traversal'] as $kind) {
     };
 }
 
-foreach ([false, true] as $failBaseline) {
-    $tests[$failBaseline ? 'baseline failure preserves successful downloads' : 'successful build publishes clean JSON and downloads'] = function () use ($root, $workspace, $failBaseline): void {
-        $checkout = $workspace.'/completed checkout '.(int) $failBaseline;
+foreach ([[false, 'all'], [true, 'all'], [false, 'deb'], [false, 'appimage'], [true, 'deb']] as [$failBaseline, $format]) {
+    $tests[($failBaseline ? 'baseline failure preserves downloads: ' : 'successful build publishes selected format: ').$format] = function () use ($root, $workspace, $failBaseline, $format): void {
+        $checkout = $workspace.'/completed checkout '.(int) $failBaseline.' '.$format;
         mkdir($checkout.'/scripts', 0755, true);
         mkdir($checkout.'/packaging/linux', 0755, true);
         copy($root.'/scripts/package-linux', $checkout.'/scripts/package-linux');
@@ -127,7 +131,16 @@ if (in_array('/source/packaging/linux/build.php', $argv, true)) {
             if (!is_file($output.'/source/Cargo.toml')) {
                 exit(31);
             }
-            foreach (['raspiboard_0.1.0-1_amd64.deb', 'Raspiboard-0.1.0-x86_64.AppImage', 'SHA256SUMS'] as $name) {
+            $format = 'all';
+            foreach ($argv as $value) {
+                if (str_starts_with($value, 'RASPIBOARD_PACKAGE_FORMAT=')) {
+                    $format = substr($value, strlen('RASPIBOARD_PACKAGE_FORMAT='));
+                }
+            }
+            $files = ['SHA256SUMS'];
+            if ($format !== 'appimage') $files[] = 'raspiboard_0.1.0-1_amd64.deb';
+            if ($format !== 'deb') $files[] = 'Raspiboard-0.1.0-x86_64.AppImage';
+            foreach ($files as $name) {
                 file_put_contents($output.'/artifacts/'.$name, "new downloads\n");
             }
         }
@@ -139,7 +152,7 @@ PHP
         );
         chmod($bin.'/podman', 0755);
         [$status, $output] = command(
-            [PHP_BINARY, $checkout.'/scripts/package-linux', '--json'],
+            [PHP_BINARY, $checkout.'/scripts/package-linux', '--json', '--format', $format],
             [...getenv(), 'PATH' => $bin.':'.getenv('PATH'), 'PACKAGING_TEST_FAIL_BASELINE' => $failBaseline ? '1' : ''],
         );
         $result = json_decode($output, true, flags: JSON_THROW_ON_ERROR);
@@ -150,7 +163,9 @@ PHP
             check($status === 0 && $result['status'] === 'ok', $output);
             check(file_get_contents($checkout.'/target/packages/SHA256SUMS') === "new downloads\n", 'Successful downloads not published');
             check(file_get_contents($checkout.'/target/previous/SHA256SUMS') === "previous\n", 'Previous build was destroyed');
-            check(count($result['files']) === 3, $output);
+            check(count($result['files']) === ($format === 'all' ? 3 : 2), $output);
+            check($format !== 'deb' || glob($checkout.'/target/packages/*.AppImage') === [], 'Debian build published an AppImage');
+            check($format !== 'appimage' || glob($checkout.'/target/packages/*.deb') === [], 'AppImage build published a Debian package');
         }
     };
 }
@@ -217,6 +232,25 @@ $tests['portable bundles reject host graphics libraries'] = function () use ($ro
     }
     throw new RuntimeException('Bundled host graphics library was accepted');
 };
+
+foreach (['deb' => 'sample.deb', 'appimage' => 'sample.AppImage'] as $format => $name) {
+    $tests['checksum verification accepts only requested format: '.$format] = function () use ($root, $workspace, $format, $name): void {
+        require_once $root.'/packaging/linux/verify.php';
+        $directory = $workspace.'/checksums-'.$format;
+        mkdir($directory);
+        file_put_contents($directory.'/'.$name, 'package fixture');
+        file_put_contents($directory.'/SHA256SUMS', hash_file('sha256', $directory.'/'.$name).'  '.$name."\n");
+        verifyChecksums($directory, $format);
+        $extra = $format === 'deb' ? 'extra.AppImage' : 'extra.deb';
+        file_put_contents($directory.'/'.$extra, 'unexpected');
+        try {
+            verifyChecksums($directory, $format);
+        } catch (RuntimeException) {
+            return;
+        }
+        throw new RuntimeException('Unexpected package format accepted');
+    };
+}
 
 $failures = 0;
 foreach ($tests as $name => $test) {

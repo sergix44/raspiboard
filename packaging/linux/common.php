@@ -4,6 +4,16 @@ declare(strict_types=1);
 
 namespace Raspiboard\Packaging;
 
+function packagePatterns(string $format): array
+{
+    return match ($format) {
+        'all' => ['*.deb', '*.AppImage'],
+        'deb' => ['*.deb'],
+        'appimage' => ['*.AppImage'],
+        default => throw new \InvalidArgumentException('--format must be all, deb or appimage', 2),
+    };
+}
+
 function process(array $arguments, ?string $directory = null, ?array $environment = null, bool $capture = false, ?string $log = null): string
 {
     $stdout = $log !== null ? ['file', $log, 'a'] : ($capture ? ['pipe', 'w'] : STDOUT);

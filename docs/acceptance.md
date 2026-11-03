@@ -18,6 +18,8 @@ Wayland and X11 where available. Build and check packages as described in
    one AppImage, and `SHA256SUMS` under `target/packages/`. Expect no GUI to open.
    Run `(cd target/packages && sha256sum --check SHA256SUMS)`; both entries must
    report `OK`. A failed build must leave previous successful downloads intact.
+   Repeat with `--format deb` and `--format appimage`; each successful run must
+   expose only its selected package and `SHA256SUMS` under `target/packages/`.
 2. Install with `sudo apt install ./target/packages/raspiboard_0.1.0-1_amd64.deb`.
    Launch Raspiboard from the menu. Expect the supplied icon, correct window
    grouping, and a title matching the version in `Cargo.toml`.

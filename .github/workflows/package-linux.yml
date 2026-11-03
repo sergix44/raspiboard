@@ -1,4 +1,4 @@
-name: Build Linux packages
+name: package
 
 on:
   push:
@@ -13,8 +13,55 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  unit_tests:
+    name: tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Cache Cargo downloads
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: target/packaging/cache/cargo/registry
+          key: linux-packages-cargo-v1-${{ hashFiles('Cargo.lock', 'packaging/linux/Containerfile') }}
+          restore-keys: linux-packages-cargo-v1-
+
+      - name: Build test environment
+        run: >-
+          docker build --tag localhost/raspiboard-packaging:debian13
+          --file packaging/linux/Containerfile packaging/linux
+
+      - name: Run Rust application unit tests
+        run: |
+          docker run --rm \
+            --user "$(id -u):$(id -g)" \
+            --volume "$PWD:/work" \
+            --env CARGO_HOME=/work/target/packaging/cache/cargo \
+            --env CARGO_TARGET_DIR=/work/target/ci-tests \
+            --env CARGO_BUILD_JOBS=2 \
+            localhost/raspiboard-packaging:debian13 \
+            cargo test --release --locked --target x86_64-unknown-linux-gnu --lib --bins
+
   package:
-    name: AppImage and Debian package
+    name: ${{ matrix.name }}
+    needs: unit_tests
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - format: deb
+            name: deb
+            artifact: '*.deb'
+          - format: appimage
+            name: appimage
+            artifact: '*.AppImage'
+    env:
+      PACKAGE_FORMAT: ${{ matrix.format }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
 
@@ -37,22 +84,28 @@ jobs:
           restore-keys: linux-packages-cargo-v1-
 
       - name: Build and validate packages
-        run: ./scripts/package-linux --engine docker --plain
+        run: ./scripts/package-linux --engine docker --format "$PACKAGE_FORMAT" --plain
 
       - name: Verify download checksums
         working-directory: target/packages
-        run: sha256sum --check SHA256SUMS
+        run: |
+          sha256sum --check SHA256SUMS
+          cp SHA256SUMS "SHA256SUMS-$PACKAGE_FORMAT"
 
-      - name: Upload packages
+      - name: Upload package
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: raspiboard-linux-x86_64-${{ github.sha }}
-          path: |
-            target/packages/*.AppImage
-            target/packages/*.deb
-            target/packages/SHA256SUMS
+          path: target/packages/${{ matrix.artifact }}
+          archive: false
           if-no-files-found: error
-          compression-level: 0
+          retention-days: 14
+
+      - name: Upload checksums
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          path: target/packages/SHA256SUMS-${{ matrix.format }}
+          archive: false
+          if-no-files-found: error
           retention-days: 14
 
       - name: Show failed build log
@@ -70,7 +123,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: linux-packaging-logs-${{ github.sha }}
+          name: linux-packaging-logs-${{ matrix.format }}-${{ github.sha }}
           path: target/packaging/runs/*/build.log
           if-no-files-found: ignore
           retention-days: 7

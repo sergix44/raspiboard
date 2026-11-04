@@ -51,6 +51,15 @@ pub struct PlaybackInstance {
     pub button_id: String,
     pub status: PlaybackStatus,
     pub preview: bool,
+    pub position_ms: u64,
+    pub seek_range: Option<SeekRange>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SeekRange {
+    pub playback_id: u64,
+    pub start_ms: u64,
+    pub end_ms: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -92,6 +101,10 @@ pub enum Command {
         options: PlaybackOptions,
     },
     Stop,
+    Seek {
+        playback_id: u64,
+        position_ms: u64,
+    },
     Pause,
     Resume,
     SetVolumes {

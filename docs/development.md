@@ -168,6 +168,10 @@ settings/button round trips, grid ordering, malformed-file preservation, atomic
 writes, shutdown flushing, and independent save-error recovery. They also check
 that restoring saved data does not start playback or select a recording target.
 These tests do not connect to a live audio server or open a window.
+Seeking tests cover the strict five-second crop threshold, overlap/preview
+exclusion, crop bounds, backward and forward jumps, generation rejection, pause
+preservation, silent paused starts, independent duration analysis, and pointer
+drag/release/cancellation without opening a window.
 Title bar tests exercise native widget event handling without opening a window:
 search and control click capture, double-click maximize, all eight resize
 directions, maximized resize suppression, and stale window-state callbacks.
@@ -212,9 +216,15 @@ host is available, the native windows close while the daemon, audio, hotkeys, an
 persistence writer remain alive. Show creates a new main window using the retained
 board state. Closing and recreating works on Wayland, where winit cannot hide an
 existing window. Loss of the tray host reopens the main window automatically.
+Primary icon activation sends a separate Toggle event. For an existing window,
+Iced queries its minimized state: minimized windows restore, visible windows use
+the shared hide-to-tray path. Replies apply only to the current main window while
+the tray is available. This explicit action works independently of the close
+preference; the Show menu action always restores or focuses the board.
 
 The automated suite covers enabled/disabled close behavior, missing tray support,
-restoring the board, tray host loss, explicit Quit, and preference persistence.
+restoring the board, tray click toggling, stale window-state replies, tray host
+loss, explicit Quit, and preference persistence.
 Live tray rendering and desktop integration are covered in the manual acceptance
 checks.
 

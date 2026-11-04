@@ -37,6 +37,8 @@ with no virtual microphone to select in that application.
   playback range with a waveform preview. Original files stay untouched.
 - **Stack sounds.** Enable Overlap Mode to layer clips, including repeated
   copies of the same sound. Pause or stop them together.
+- **Seek through longer sounds.** Click or drag the progress bar above the
+  bottom panel for non-overlapping playback ranges longer than five seconds.
 - **Trigger from anywhere.** Assign desktop-managed global hotkeys and play
   sounds while another application has focus.*
 - **Set the mood.** Choose Deck or Console, resize the pads, and drag them
@@ -60,7 +62,7 @@ Download the `.deb` or AppImage directly, plus its matching checksum file.
 From the directory containing the package:
 
 ```sh
-sudo apt install ./raspiboard_0.2.0-1_amd64.deb
+sudo apt install ./raspiboard_0.3.0-1_amd64.deb
 ```
 
 Then open **Raspiboard** from your application menu.
@@ -68,8 +70,8 @@ Then open **Raspiboard** from your application menu.
 ### Run the AppImage
 
 ```sh
-chmod +x Raspiboard-0.2.0-x86_64.AppImage
-./Raspiboard-0.2.0-x86_64.AppImage
+chmod +x Raspiboard-0.3.0-x86_64.AppImage
+./Raspiboard-0.3.0-x86_64.AppImage
 ```
 
 Use the filename matching your downloaded version. Both formats share the same

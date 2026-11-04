@@ -152,9 +152,24 @@ impl Soundboard {
     }
 
     pub(super) fn preview_playing(&self) -> bool {
-        self.audio.playbacks.iter().any(|instance| {
+        self.preview_instance().is_some()
+    }
+
+    fn preview_instance(&self) -> Option<&audio::PlaybackInstance> {
+        self.audio.playbacks.iter().find(|instance| {
             instance.preview && self.options_button.as_deref() == Some(instance.button_id.as_str())
         })
+    }
+
+    pub(super) fn preview_position_ms(&self) -> Option<u64> {
+        self.preview_instance()
+            .filter(|instance| {
+                matches!(
+                    instance.status,
+                    audio::PlaybackStatus::Playing | audio::PlaybackStatus::Paused
+                )
+            })
+            .map(|instance| instance.position_ms)
     }
 
     pub(super) fn preview_command(&self) -> Option<audio::Command> {
@@ -572,9 +587,13 @@ impl Soundboard {
                 Some(wave.duration_ms),
             )
             .unwrap_or((record.start_ms, record.end_ms));
-            let chart = waveform::view(wave, start, end, move |start, end, commit| {
-                event(Action::Range { start, end, commit })
-            });
+            let chart = waveform::view(
+                wave,
+                start,
+                end,
+                self.preview_position_ms(),
+                move |start, end, commit| event(Action::Range { start, end, commit }),
+            );
             controls = controls.push(iced::widget::keyed::Column::with_children([(
                 generation, chart,
             )]));

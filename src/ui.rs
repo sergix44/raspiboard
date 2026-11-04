@@ -25,6 +25,8 @@ mod persistence;
 mod recording;
 mod reorder;
 mod search;
+mod seek_slider;
+mod seeking;
 mod settings;
 mod sound_pad;
 #[cfg(test)]
@@ -59,6 +61,7 @@ pub struct Soundboard {
     sound_button_scale: u16,
     controller: Option<Controller>,
     audio: Snapshot,
+    seek_draft: Option<(u64, u64)>,
     buttons: Vec<Button>,
     search: String,
     default_button_count: usize,
@@ -93,6 +96,10 @@ pub enum Message {
     WindowCloseRequested(window::Id),
     MinimizeToTrayChanged(bool),
     Tray(tray::Event),
+    TrayWindowState {
+        id: window::Id,
+        minimized: Option<bool>,
+    },
     EscapePressed(window::Id),
     ThemeChanged(ThemeChoice),
     SoundButtonScaleChanged(u16),
@@ -147,6 +154,12 @@ pub enum Message {
     Pause,
     Resume,
     Stop,
+    SeekChanged {
+        playback_id: u64,
+        position_ms: u64,
+    },
+    SeekReleased(u64),
+    SeekCancelled(u64),
     Saved(Report),
 }
 
@@ -335,6 +348,9 @@ impl Soundboard {
             Message::CloseSettings => return self.close_settings(),
             Message::WindowCloseRequested(id) => return self.close_requested(id),
             Message::Tray(event) => return self.tray_event(event),
+            Message::TrayWindowState { id, minimized } => {
+                return self.tray_window_state(id, minimized);
+            }
             Message::MinimizeToTrayChanged(enabled) => {
                 self.minimize_to_tray = enabled;
                 return self.save_settings();
@@ -464,6 +480,7 @@ impl Soundboard {
                     log::error!(target: "raspiboard::audio", "{error}");
                 }
                 self.audio = *snapshot;
+                self.sync_seek_draft();
             }
             Message::SelectTarget(target) => {
                 // Explicit None also cancels default selection before discovery finishes.
@@ -565,6 +582,23 @@ impl Soundboard {
                 }
             }
             Message::Pause => self.send(Command::Pause),
+            Message::SeekChanged {
+                playback_id,
+                position_ms,
+            } => self.seek_changed(playback_id, position_ms),
+            Message::SeekReleased(playback_id) => {
+                if let Some(command) = self.seek_command(playback_id) {
+                    self.send(command);
+                    if self.error.is_some() {
+                        self.seek_draft = None;
+                    }
+                }
+            }
+            Message::SeekCancelled(playback_id) => {
+                if self.seek_draft.is_some_and(|(id, _)| id == playback_id) {
+                    self.seek_draft = None;
+                }
+            }
             Message::Resume => self.send(Command::Resume),
             Message::Stop => self.send(Command::Stop),
             Message::Saved(report) => self.saved(report),
@@ -721,18 +755,26 @@ impl Soundboard {
                 container(text(error).size(14).style(text::danger)).padding([0.0, CONTENT_PADDING]),
             );
         }
-        let footer = container(footer).padding(12).style(|theme: &Theme| {
-            let colors = raspiboard::theme::tokens(theme);
-            container::Style {
-                background: Some(colors.surface.into()),
-                border: iced::Border {
-                    color: colors.border,
-                    width: 1.0,
-                    radius: colors.radius.into(),
-                },
-                ..container::Style::default()
-            }
-        });
+        let footer = container(footer)
+            .padding(iced::Padding {
+                top: 20.0,
+                right: 12.0,
+                bottom: 12.0,
+                left: 12.0,
+            })
+            .style(|theme: &Theme| {
+                let colors = raspiboard::theme::tokens(theme);
+                container::Style {
+                    background: Some(colors.surface.into()),
+                    border: iced::Border {
+                        color: colors.border,
+                        width: 1.0,
+                        radius: colors.radius.into(),
+                    },
+                    ..container::Style::default()
+                }
+            });
+        let footer = seek_slider::stack_panel(self.seek_control(), footer.into());
         let footer = container(footer).padding(iced::Padding {
             top: 0.0,
             right: CONTENT_PADDING,

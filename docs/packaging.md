@@ -96,8 +96,8 @@ For the current `Cargo.toml` version, outputs are:
 
 ```text
 target/packages/
-├── raspiboard_0.2.0-1_amd64.deb
-├── Raspiboard-0.2.0-x86_64.AppImage
+├── raspiboard_0.3.0-1_amd64.deb
+├── Raspiboard-0.3.0-x86_64.AppImage
 └── SHA256SUMS
 ```
 
@@ -134,7 +134,7 @@ From the checkout, after building:
 ```sh
 cd target/packages
 sha256sum --check SHA256SUMS
-sudo apt install ./raspiboard_0.2.0-1_amd64.deb
+sudo apt install ./raspiboard_0.3.0-1_amd64.deb
 ```
 
 APT installs declared library and portal dependencies. A graphical desktop with
@@ -158,14 +158,14 @@ and license notices under `/usr`.
 After checking the download's checksum:
 
 ```sh
-chmod +x Raspiboard-0.2.0-x86_64.AppImage
-./Raspiboard-0.2.0-x86_64.AppImage
+chmod +x Raspiboard-0.3.0-x86_64.AppImage
+./Raspiboard-0.3.0-x86_64.AppImage
 ```
 
 For a system without FUSE, extract and run it:
 
 ```sh
-./Raspiboard-0.2.0-x86_64.AppImage --appimage-extract
+./Raspiboard-0.3.0-x86_64.AppImage --appimage-extract
 ./squashfs-root/AppRun
 ```
 
@@ -211,8 +211,8 @@ editing its launcher. These commands use the AppImage's extracted assets and
 `desktop-file-install` from `desktop-file-utils`:
 
 ```sh
-install -Dm755 Raspiboard-0.2.0-x86_64.AppImage "$HOME/.local/bin/raspiboard.AppImage"
-./Raspiboard-0.2.0-x86_64.AppImage --appimage-extract
+install -Dm755 Raspiboard-0.3.0-x86_64.AppImage "$HOME/.local/bin/raspiboard.AppImage"
+./Raspiboard-0.3.0-x86_64.AppImage --appimage-extract
 install -Dm644 \
   squashfs-root/usr/share/icons/hicolor/512x512/apps/io.raspiboard.Raspiboard.png \
   "$HOME/.local/share/icons/hicolor/512x512/apps/io.raspiboard.Raspiboard.png"

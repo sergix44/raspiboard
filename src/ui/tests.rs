@@ -832,6 +832,8 @@ fn options_preview_uses_current_crop_and_gain_and_requires_valid_input() {
         button_id: INITIAL_ID.into(),
         status: PlaybackStatus::Playing,
         preview: true,
+        position_ms: 0,
+        seek_range: None,
     }];
     assert!(board.preview_playing());
     board.audio.playback = PlaybackStatus::Idle;
@@ -907,21 +909,29 @@ fn every_playing_pad_is_highlighted_independently_of_the_selected_pad() {
             button_id: "horn".into(),
             status: PlaybackStatus::Playing,
             preview: false,
+            position_ms: 0,
+            seek_range: None,
         },
         audio::PlaybackInstance {
             button_id: "bell".into(),
             status: PlaybackStatus::Playing,
             preview: false,
+            position_ms: 0,
+            seek_range: None,
         },
         audio::PlaybackInstance {
             button_id: "loading".into(),
             status: PlaybackStatus::Loading,
             preview: false,
+            position_ms: 0,
+            seek_range: None,
         },
         audio::PlaybackInstance {
             button_id: "paused".into(),
             status: PlaybackStatus::Paused,
             preview: false,
+            position_ms: 0,
+            seek_range: None,
         },
     ];
     assert!(board.button_playing("horn"));
@@ -943,6 +953,8 @@ fn preview_controls_identify_preview_instead_of_last_selected_sound() {
         button_id: INITIAL_ID.into(),
         status: PlaybackStatus::Playing,
         preview: false,
+        position_ms: 0,
+        seek_range: None,
     }];
     assert!(!board.preview_playing());
     board.audio.playbacks[0].preview = true;
@@ -950,6 +962,36 @@ fn preview_controls_identify_preview_instead_of_last_selected_sound() {
     assert!(board.preview_playing());
     board.audio.playbacks.clear();
     assert!(!board.preview_playing());
+}
+
+#[test]
+fn waveform_playhead_follows_only_the_current_options_preview() {
+    let mut board = default_board();
+    let _ = board.update(Message::OpenButtonOptions(INITIAL_ID.into()));
+    board.audio.playbacks = vec![audio::PlaybackInstance {
+        button_id: INITIAL_ID.into(),
+        status: PlaybackStatus::Loading,
+        preview: true,
+        position_ms: 500,
+        seek_range: None,
+    }];
+    assert_eq!(board.preview_position_ms(), None);
+
+    board.audio.playbacks[0].status = PlaybackStatus::Playing;
+    assert_eq!(board.preview_position_ms(), Some(500));
+    board.audio.playbacks[0].position_ms = 1250;
+    board.options.start = "2".into();
+    assert_eq!(board.preview_position_ms(), Some(1250));
+    board.audio.playbacks[0].status = PlaybackStatus::Paused;
+    assert_eq!(board.preview_position_ms(), Some(1250));
+
+    board.audio.playbacks[0].preview = false;
+    assert_eq!(board.preview_position_ms(), None);
+    board.audio.playbacks[0].preview = true;
+    board.audio.playbacks[0].button_id = "other".into();
+    assert_eq!(board.preview_position_ms(), None);
+    board.audio.playbacks.clear();
+    assert_eq!(board.preview_position_ms(), None);
 }
 
 #[test]
@@ -961,6 +1003,8 @@ fn deleting_an_older_overlapping_pad_sends_stop_for_the_group() {
         button_id: INITIAL_ID.into(),
         status: PlaybackStatus::Playing,
         preview: false,
+        position_ms: 0,
+        seek_range: None,
     }];
     let _ = board.update(Message::DeleteButton(INITIAL_ID.into()));
     assert!(
@@ -1002,6 +1046,69 @@ fn close_to_tray_keeps_playback_and_restores_the_board() {
     assert_eq!(board.main_window, restored);
     assert!(!board.main_hidden);
     assert!(board.main_window.is_some());
+}
+
+#[test]
+fn tray_activation_hides_and_restores_without_changing_playback_or_close_preference() {
+    let mut board = default_board();
+    let main = window::Id::unique();
+    board.main_window = Some(main);
+    board.audio.playback = PlaybackStatus::Playing;
+    let audio = board.audio.clone();
+    let buttons = board.buttons.clone();
+    assert!(!board.minimize_to_tray);
+    let _ = board.update(Message::Tray(tray::Event::Available(true)));
+    let query = board.update(Message::Tray(tray::Event::Toggle));
+    assert!(query.units() > 0);
+    let _ = board.update(Message::TrayWindowState {
+        id: main,
+        minimized: Some(false),
+    });
+    assert!(board.main_hidden);
+    assert!(board.main_window.is_none());
+    assert_eq!(board.audio, audio);
+    assert_eq!(board.buttons, buttons);
+    assert!(!board.minimize_to_tray);
+
+    let _ = board.update(Message::WindowClosed(main));
+    let _ = board.update(Message::Tray(tray::Event::Toggle));
+    let restored = board.main_window.unwrap();
+    assert!(!board.main_hidden);
+    let _ = board.update(Message::Tray(tray::Event::Show));
+    assert_eq!(board.main_window, Some(restored));
+    assert_eq!(board.audio, audio);
+    let _ = board.update(Message::TrayWindowState {
+        id: restored,
+        minimized: None,
+    });
+    assert!(board.main_hidden);
+}
+
+#[test]
+fn tray_activation_restores_taskbar_minimized_windows_and_ignores_stale_state() {
+    let mut board = default_board();
+    let main = window::Id::unique();
+    board.main_window = Some(main);
+    let _ = board.update(Message::Tray(tray::Event::Available(true)));
+    let restore = board.update(Message::TrayWindowState {
+        id: main,
+        minimized: Some(true),
+    });
+    assert!(restore.units() > 0);
+    assert_eq!(board.main_window, Some(main));
+    assert!(!board.main_hidden);
+    let _ = board.update(Message::TrayWindowState {
+        id: window::Id::unique(),
+        minimized: Some(false),
+    });
+    assert_eq!(board.main_window, Some(main));
+    let _ = board.update(Message::Tray(tray::Event::Available(false)));
+    let _ = board.update(Message::TrayWindowState {
+        id: main,
+        minimized: Some(false),
+    });
+    assert_eq!(board.main_window, Some(main));
+    assert!(!board.main_hidden);
 }
 
 #[test]

@@ -47,6 +47,7 @@ impl Passthrough {
             },
             volumes.remote.clone(),
             Arc::new(AtomicBool::new(false)),
+            0,
         )?;
         let capture =
             Capture::application(core, source, channels, producer, player.enabled.clone())?;
@@ -123,10 +124,11 @@ mod tests {
 
     #[test]
     fn passthrough_live_frames_use_remote_gain_without_local_gain() {
-        use crate::audio::buffer::{SampleFeed, TransportFade};
+        use crate::audio::buffer::{PlaybackPosition, SampleFeed, TransportFade};
         let volumes = OutputVolumes::default();
         let (mut producer, consumer) = rtrb::RingBuffer::new(8);
         let mut feed = SampleFeed {
+            position: Arc::new(PlaybackPosition::new(RATE, 0)),
             consumer,
             eof: Arc::new(AtomicBool::new(false)),
             finished: Arc::new(AtomicBool::new(false)),
@@ -135,7 +137,7 @@ mod tests {
             enabled: Arc::new(AtomicBool::new(true)),
             stop: Arc::new(AtomicBool::new(false)),
             paused: Arc::new(AtomicBool::new(false)),
-            fade: TransportFade::new(RATE),
+            fade: TransportFade::new(RATE, false),
         };
         let input: Vec<_> = [0.8_f32, -0.4]
             .into_iter()

@@ -1,7 +1,30 @@
 use std::sync::{
     Arc,
-    atomic::{AtomicBool, AtomicU8, Ordering},
+    atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
 };
+
+pub struct PlaybackPosition {
+    frames: AtomicU64,
+    rate: u32,
+    start_ms: u64,
+}
+
+impl PlaybackPosition {
+    pub fn new(rate: u32, start_ms: u64) -> Self {
+        Self {
+            frames: AtomicU64::new(0),
+            rate,
+            start_ms,
+        }
+    }
+
+    pub fn position_ms(&self) -> u64 {
+        let elapsed =
+            u128::from(self.frames.load(Ordering::Relaxed)) * 1000 / u128::from(self.rate.max(1));
+        self.start_ms
+            .saturating_add(elapsed.min(u128::from(u64::MAX)) as u64)
+    }
+}
 
 pub struct TransportFade {
     frames: usize,
@@ -10,17 +33,18 @@ pub struct TransportFade {
 }
 
 impl TransportFade {
-    pub fn new(rate: u32) -> Self {
+    pub fn new(rate: u32, paused: bool) -> Self {
         let frames = (rate / 200).max(1) as usize;
         Self {
             frames,
-            remaining: frames,
+            remaining: if paused { 0 } else { frames },
             last: [0.0; 2],
         }
     }
 }
 
 pub struct SampleFeed {
+    pub position: Arc<PlaybackPosition>,
     pub consumer: rtrb::Consumer<[f32; 2]>,
     pub eof: Arc<AtomicBool>,
     pub finished: Arc<AtomicBool>,
@@ -43,6 +67,7 @@ impl SampleFeed {
         }
         let gain = f32::from(self.volume.load(Ordering::Relaxed).min(100)) / 100.0;
         let mut written = 0;
+        let mut consumed = 0;
         for frame in bytes.chunks_exact_mut(8) {
             // Completion must be observed before the queue read: the producer
             // may publish its last frame and EOF while this callback runs.
@@ -61,7 +86,10 @@ impl SampleFeed {
             }
             let eof = self.eof.load(Ordering::Acquire);
             let samples = match self.consumer.pop() {
-                Ok(samples) => samples,
+                Ok(samples) => {
+                    consumed += 1;
+                    samples
+                }
                 Err(_) if stopping || paused => self.fade.last,
                 Err(_) if eof => {
                     self.finished.store(true, Ordering::Release);
@@ -91,6 +119,7 @@ impl SampleFeed {
                 break;
             }
         }
+        self.position.frames.fetch_add(consumed, Ordering::Relaxed);
         written
     }
 }
@@ -101,9 +130,28 @@ mod tests {
     use std::sync::atomic::Ordering;
 
     #[test]
+    fn a_seek_started_while_paused_stays_silent_and_preserves_position_until_resume() {
+        let (mut producer, mut feed) = feed(100);
+        feed.fade = TransportFade::new(1000, true);
+        feed.position = Arc::new(PlaybackPosition::new(1000, 6000));
+        feed.paused.store(true, Ordering::Release);
+        producer.push([0.5; 2]).unwrap();
+        producer.push([0.5; 2]).unwrap();
+        let mut bytes = [255; 16];
+        feed.render(&mut bytes);
+        assert_eq!(bytes, [0; 16]);
+        assert_eq!(feed.position.position_ms(), 6000);
+        assert_eq!(feed.consumer.slots(), 2);
+        feed.paused.store(false, Ordering::Release);
+        feed.render(&mut bytes);
+        assert!(f32::from_le_bytes(bytes[..4].try_into().unwrap()) > 0.0);
+        assert_eq!(feed.position.position_ms(), 6002);
+    }
+
+    #[test]
     fn rapid_pause_resume_reverses_the_current_fade_without_a_jump() {
         let (mut producer, mut feed) = feed(100);
-        feed.fade = TransportFade::new(1000);
+        feed.fade = TransportFade::new(1000, false);
         let mut bytes = [0; 8];
         for (paused, expected) in [(true, 0.8_f32), (false, 1.0), (true, 0.8), (true, 0.6)] {
             producer.push([1.0; 2]).unwrap();
@@ -117,7 +165,8 @@ mod tests {
     #[test]
     fn pause_preserves_queued_position_and_resume_fades_up() {
         let (mut producer, mut feed) = feed(100);
-        feed.fade = TransportFade::new(400); // Two frames.
+        feed.position = Arc::new(PlaybackPosition::new(1000, 500));
+        feed.fade = TransportFade::new(400, false); // Two frames.
         for value in [0.5, 0.5, 0.25, 0.75] {
             producer.push([value; 2]).unwrap();
         }
@@ -127,6 +176,7 @@ mod tests {
         assert_eq!(&bytes[..4], &0.25_f32.to_le_bytes());
         assert_eq!(&bytes[8..12], &0.0_f32.to_le_bytes());
         assert_eq!(feed.consumer.slots(), 2);
+        assert_eq!(feed.position.position_ms(), 502);
         feed.eof.store(true, Ordering::Release);
         for _ in 0..3 {
             bytes.fill(255);
@@ -134,19 +184,44 @@ mod tests {
             assert_eq!(bytes, [0; 16]);
             assert_eq!(feed.consumer.slots(), 2);
             assert!(!feed.finished.load(Ordering::Acquire));
+            assert_eq!(feed.position.position_ms(), 502);
         }
         feed.paused.store(false, Ordering::Release);
         assert_eq!(feed.render(&mut bytes), 16);
         assert_eq!(&bytes[..4], &0.125_f32.to_le_bytes());
         assert_eq!(&bytes[8..12], &0.75_f32.to_le_bytes());
+        assert_eq!(feed.position.position_ms(), 504);
         assert_eq!(feed.render(&mut bytes), 0);
         assert!(feed.finished.load(Ordering::Acquire));
     }
 
     #[test]
+    fn playback_position_counts_source_frames_from_crop_start_without_counting_silence() {
+        let (mut producer, mut feed) = feed(0);
+        feed.position = Arc::new(PlaybackPosition::new(2000, 750));
+        producer.push([0.5; 2]).unwrap();
+        producer.push([0.5; 2]).unwrap();
+        feed.enabled.store(false, Ordering::Release);
+        feed.render(&mut [0; 32]);
+        assert_eq!(feed.position.position_ms(), 750);
+
+        feed.enabled.store(true, Ordering::Release);
+        feed.render(&mut [0; 32]);
+        assert_eq!(feed.position.position_ms(), 751);
+        feed.render(&mut [0; 32]);
+        assert_eq!(feed.position.position_ms(), 751);
+
+        feed.eof.store(true, Ordering::Release);
+        feed.render(&mut [0; 32]);
+        assert!(feed.finished.load(Ordering::Acquire));
+        feed.render(&mut [0; 32]);
+        assert_eq!(feed.position.position_ms(), 751);
+    }
+
+    #[test]
     fn stop_while_paused_finishes_without_consuming_more_samples() {
         let (mut producer, mut feed) = feed(100);
-        feed.fade = TransportFade::new(200);
+        feed.fade = TransportFade::new(200, false);
         producer.push([0.5; 2]).unwrap();
         producer.push([0.25; 2]).unwrap();
         feed.paused.store(true, Ordering::Release);
@@ -161,7 +236,7 @@ mod tests {
     #[test]
     fn stop_fades_across_callbacks_even_when_the_queue_runs_dry() {
         let (mut producer, mut feed) = feed(100);
-        feed.fade = TransportFade::new(1000); // Five frames.
+        feed.fade = TransportFade::new(1000, false); // Five frames.
         producer.push([0.5, -0.25]).unwrap();
         let mut bytes = [0; 8];
         feed.render(&mut bytes);
@@ -206,6 +281,7 @@ mod tests {
         (
             producer,
             SampleFeed {
+                position: Arc::new(PlaybackPosition::new(48000, 0)),
                 consumer,
                 eof: Arc::new(AtomicBool::new(false)),
                 finished: Arc::new(AtomicBool::new(false)),
@@ -214,7 +290,7 @@ mod tests {
                 enabled: Arc::new(AtomicBool::new(true)),
                 stop: Arc::new(AtomicBool::new(false)),
                 paused: Arc::new(AtomicBool::new(false)),
-                fade: TransportFade::new(48000),
+                fade: TransportFade::new(48000, false),
             },
         )
     }
@@ -263,7 +339,7 @@ mod tests {
         for stopped in [false, true] {
             let (mut producer, mut feed) = feed(if stopped { 100 } else { 0 });
             feed.clip_gain = 5.623413;
-            feed.fade = TransportFade::new(200);
+            feed.fade = TransportFade::new(200, false);
             feed.stop.store(stopped, Ordering::Release);
             producer.push([f32::MAX, -f32::MAX]).unwrap();
             let mut bytes = [255; 8];

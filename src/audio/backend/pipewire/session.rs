@@ -69,18 +69,25 @@ pub(super) struct Session {
     drain_started: Option<Instant>,
     target: Option<Target>,
     sequence: u64,
+    start_ms: u64,
+    path: PathBuf,
+    options: PlaybackOptions,
+    overlap: bool,
+    end_ms: Option<u64>,
+    duration_job: Option<super::job::DurationJob>,
 }
 
 impl Session {
     pub fn new(
         button_id: String,
         preview: bool,
+        overlap: bool,
         path: PathBuf,
         target: Option<Target>,
         options: PlaybackOptions,
         sequence: u64,
     ) -> Result<Self, String> {
-        let job = DecodeJob::start(path, target.is_some(), options)?;
+        let job = DecodeJob::start(path.clone(), target.is_some(), options)?;
         Ok(Self {
             button_id,
             preview,
@@ -91,6 +98,12 @@ impl Session {
             drain_started: None,
             target,
             sequence,
+            start_ms: options.start_ms.unwrap_or(0),
+            path,
+            options,
+            overlap,
+            end_ms: options.end_ms,
+            duration_job: None,
         })
     }
 
@@ -109,7 +122,52 @@ impl Session {
                 PlaybackStatus::Loading
             },
             preview: self.preview,
+            position_ms: self.playback.as_ref().map_or(self.start_ms, |playback| {
+                playback.local.position.position_ms()
+            }),
+            seek_range: self.seek_range(),
         }
+    }
+
+    fn seek_range(&self) -> Option<crate::audio::SeekRange> {
+        let start_ms = self.options.start_ms.unwrap_or(0);
+        let end_ms = self.end_ms?;
+        (!self.preview && !self.overlap && end_ms.saturating_sub(start_ms) > 5000).then_some(
+            crate::audio::SeekRange {
+                playback_id: self.sequence,
+                start_ms,
+                end_ms,
+            },
+        )
+    }
+
+    pub fn seek(
+        &mut self,
+        playback_id: u64,
+        position_ms: u64,
+        sequence: u64,
+    ) -> Result<Option<Playback>, String> {
+        let Some(range) = self
+            .seek_range()
+            .filter(|range| range.playback_id == playback_id)
+        else {
+            return Ok(None);
+        };
+        let start_ms = position_ms.clamp(range.start_ms, range.end_ms - 1);
+        let options = PlaybackOptions {
+            start_ms: Some(start_ms),
+            ..self.options
+        };
+        let job = DecodeJob::start(self.path.clone(), self.target.is_some(), options)?;
+        let paused = self.paused.load(Ordering::Acquire);
+        let retiring = self.stop();
+        self.job = job;
+        self.paused = Arc::new(AtomicBool::new(paused));
+        self.start_ms = start_ms;
+        self.sequence = sequence;
+        self.started = None;
+        self.drain_started = None;
+        Ok(retiring)
     }
 
     pub fn set_paused(&self, paused: bool) {
@@ -146,6 +204,15 @@ impl Session {
         if self.playback.is_none() {
             match self.job.ready.try_recv() {
                 Ok(Ok(decoded)) => {
+                    if self.end_ms.is_none() && !self.preview && !self.overlap {
+                        self.end_ms = decoded.duration_ms;
+                        if self.end_ms.is_none() && self.duration_job.is_none() {
+                            match super::job::DurationJob::start(self.path.clone()) {
+                                Ok(job) => self.duration_job = Some(job),
+                                Err(error) => log::warn!(target: "raspiboard::audio", "{error}"),
+                            }
+                        }
+                    }
                     let remote = if let Some(decoded) = decoded.remote {
                         let target = self.target.clone().ok_or("Select an application first.")?;
                         let route = Route::new(core, graph, target, self.sequence)?;
@@ -155,6 +222,7 @@ impl Session {
                             decoded,
                             volumes.remote.clone(),
                             self.paused.clone(),
+                            self.start_ms,
                         )?;
                         Some(RemotePlayback { player, route })
                     } else {
@@ -166,6 +234,7 @@ impl Session {
                         decoded.local,
                         volumes.local.clone(),
                         self.paused.clone(),
+                        self.start_ms,
                     )?;
                     self.playback = Some(Playback {
                         remote,
@@ -178,6 +247,16 @@ impl Session {
                 Err(mpsc::TryRecvError::Disconnected) => {
                     return Err("The audio decoder stopped unexpectedly.".into());
                 }
+                Err(mpsc::TryRecvError::Empty) => {}
+            }
+        }
+        if let Some(job) = &self.duration_job {
+            match job.ready.try_recv() {
+                Ok(result) => {
+                    self.end_ms = result.ok();
+                    self.duration_job = None;
+                }
+                Err(mpsc::TryRecvError::Disconnected) => self.duration_job = None,
                 Err(mpsc::TryRecvError::Empty) => {}
             }
         }

@@ -1,5 +1,5 @@
 use super::{
-    buffer::{SampleFeed, TransportFade},
+    buffer::{PlaybackPosition, SampleFeed, TransportFade},
     graph::{APP_ID, LOCAL_LINK_GROUP},
     job::Decoded,
 };
@@ -16,6 +16,7 @@ use std::{
 };
 
 pub struct Player {
+    pub position: Arc<PlaybackPosition>,
     _listener: pw::stream::StreamListener<SampleFeed>,
     pub stream: pw::stream::StreamRc,
     pub finished: Arc<AtomicBool>,
@@ -34,6 +35,7 @@ impl Player {
         decoded: Decoded,
         volume: Arc<AtomicU8>,
         paused: Arc<AtomicBool>,
+        start_ms: u64,
     ) -> Result<Self, String> {
         let mut props = properties! {
             "application.name" => "Raspiboard",
@@ -68,7 +70,9 @@ impl Player {
         let enabled = Arc::new(AtomicBool::new(false));
         let on_error = error.clone();
         let stop = Arc::new(AtomicBool::new(false));
+        let position = Arc::new(PlaybackPosition::new(decoded.rate, start_ms));
         let feed = SampleFeed {
+            position: position.clone(),
             consumer: decoded.samples,
             eof: decoded.eof,
             finished: finished.clone(),
@@ -77,7 +81,7 @@ impl Player {
             enabled: enabled.clone(),
             stop: stop.clone(),
             paused: paused.clone(),
-            fade: TransportFade::new(decoded.rate),
+            fade: TransportFade::new(decoded.rate, paused.load(Ordering::Acquire)),
         };
         let listener = stream
             .add_local_listener_with_user_data(feed)
@@ -126,6 +130,7 @@ impl Player {
             )
             .map_err(|e| e.to_string())?;
         Ok(Self {
+            position,
             _listener: listener,
             stream,
             finished,

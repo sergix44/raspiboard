@@ -141,6 +141,7 @@ fn local_only_decode_finishes_beyond_queue_capacity_without_a_remote_consumer() 
         .unwrap()
         .unwrap();
     assert!(outputs.remote.is_none());
+    assert_eq!(outputs.duration_ms, Some(683));
     let deadline = std::time::Instant::now() + Duration::from_secs(3);
     let mut frames = 0;
     loop {
@@ -170,6 +171,21 @@ fn local_only_decode_finishes_beyond_queue_capacity_without_a_remote_consumer() 
             .recv_timeout(Duration::from_secs(2))
             .unwrap()
             .is_ok()
+    );
+}
+
+#[test]
+fn duration_analysis_finishes_without_consuming_the_playback_queue() {
+    let (_directory, path) = source_file(&[16384; 48000]);
+    let _decode = DecodeJob::start(path.clone(), false, PlaybackOptions::default()).unwrap();
+    let duration = DurationJob::start(path).unwrap();
+    assert_eq!(
+        duration
+            .ready
+            .recv_timeout(Duration::from_secs(2))
+            .unwrap()
+            .unwrap(),
+        1000
     );
 }
 

@@ -179,12 +179,21 @@ impl Engine {
         &mut self,
         button_id: String,
         preview: bool,
+        overlap: bool,
         path: std::path::PathBuf,
         target: Option<Target>,
         options: PlaybackOptions,
     ) {
         self.sequence += 1;
-        match Session::new(button_id, preview, path, target, options, self.sequence) {
+        match Session::new(
+            button_id,
+            preview,
+            overlap,
+            path,
+            target,
+            options,
+            self.sequence,
+        ) {
             Ok(session) => {
                 self.target_initialized = true;
                 self.sessions.push(session);
@@ -243,6 +252,20 @@ impl Engine {
             Command::SetVolumes { remote, local } => volumes.set(remote, local),
             Command::Pause => self.set_paused(true),
             Command::Resume => self.set_paused(false),
+            Command::Seek {
+                playback_id,
+                position_ms,
+            } => {
+                if self.sessions.len() == 1 {
+                    self.sequence += 1;
+                    match self.sessions[0].seek(playback_id, position_ms, self.sequence) {
+                        Ok(Some(playback)) => self.retiring.push((playback, Instant::now())),
+                        Ok(None) => {}
+                        Err(error) => self.snapshot.error = Some(error),
+                    }
+                    self.refresh_playback();
+                }
+            }
             Command::Preview {
                 button_id,
                 path,
@@ -250,7 +273,7 @@ impl Engine {
             } => {
                 self.stop();
                 self.snapshot.error = None;
-                self.start_decode(button_id, true, path, None, options);
+                self.start_decode(button_id, true, false, path, None, options);
             }
             Command::Stop => {
                 self.stop();
@@ -293,7 +316,7 @@ impl Engine {
                     return;
                 }
                 self.set_paused(false);
-                self.start_decode(button_id, false, path, target, options);
+                self.start_decode(button_id, false, overlap, path, target, options);
             }
         }
     }

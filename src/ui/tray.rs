@@ -7,6 +7,7 @@ use ksni::TrayMethods;
 pub enum Event {
     Available(bool),
     Show,
+    Toggle,
     Quit,
 }
 
@@ -35,7 +36,7 @@ impl ksni::Tray for Tray {
     }
 
     fn activate(&mut self, _x: i32, _y: i32) {
-        self.send(Event::Show);
+        self.send(Event::Toggle);
     }
 
     fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
@@ -113,11 +114,16 @@ impl Soundboard {
         if !self.minimize_to_tray || !self.tray_available {
             return self.quit();
         }
+        self.hide_main_to_tray(id)
+    }
+
+    fn hide_main_to_tray(&mut self, id: window::Id) -> Task<Message> {
         self.main_hidden = true;
         self.main_window = None;
         self.reorder = None;
         self.grid_menu = None;
         self.button_menu = None;
+        self.seek_draft = None;
         Task::batch([
             window::close(id),
             self.close_settings(),
@@ -135,7 +141,32 @@ impl Soundboard {
                 Task::none()
             }
             Event::Show => self.open_main(),
+            Event::Toggle => {
+                if let Some(id) = self.main_window
+                    && self.tray_available
+                {
+                    window::is_minimized(id)
+                        .map(move |minimized| Message::TrayWindowState { id, minimized })
+                } else {
+                    self.open_main()
+                }
+            }
             Event::Quit => self.quit(),
+        }
+    }
+
+    pub(super) fn tray_window_state(
+        &mut self,
+        id: window::Id,
+        minimized: Option<bool>,
+    ) -> Task<Message> {
+        if self.main_window != Some(id) || !self.tray_available {
+            return Task::none();
+        }
+        if minimized == Some(true) {
+            self.open_main()
+        } else {
+            self.hide_main_to_tray(id)
         }
     }
 
@@ -159,5 +190,25 @@ impl Soundboard {
         self.options_button = None;
         self.options.cancel_analysis();
         iced::exit()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn primary_activation_sends_a_toggle_instead_of_the_menu_show_action() {
+        let (events, receiver) = async_channel::unbounded();
+        let mut tray = Tray {
+            events,
+            icon: ksni::Icon {
+                width: 0,
+                height: 0,
+                data: Vec::new(),
+            },
+        };
+        ksni::Tray::activate(&mut tray, 0, 0);
+        assert!(matches!(receiver.try_recv().unwrap(), Event::Toggle));
     }
 }

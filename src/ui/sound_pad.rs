@@ -182,6 +182,23 @@ pub(super) fn shade(color: Color, factor: f32) -> Color {
     }
 }
 
+pub(super) fn face_background(theme: &Theme, face: Color) -> iced::Background {
+    if tokens(theme).metallic {
+        gradient::Linear::new(std::f32::consts::FRAC_PI_2)
+            .add_stop(0.0, shade(face, 1.32))
+            .add_stop(0.12, shade(face, 1.12))
+            .add_stop(0.48, face)
+            .add_stop(0.52, shade(face, 0.94))
+            .add_stop(1.0, shade(face, 0.78))
+            .into()
+    } else {
+        gradient::Linear::new(std::f32::consts::FRAC_PI_2)
+            .add_stop(0.0, shade(face, 1.10))
+            .add_stop(1.0, shade(face, 0.94))
+            .into()
+    }
+}
+
 fn blink_intensity(elapsed: Duration) -> f32 {
     let ms = (elapsed.as_micros() % 2_000_000) as f32 / 1000.0;
     if ms < 40.0 {
@@ -519,19 +536,8 @@ impl<Message, Renderer: renderer::Renderer> Widget<Message, Theme, Renderer>
         renderer.fill_quad(quad(bounds, radius), edge);
         let surface: iced::Background = if matches!(self.tone, Tone::Custom(_)) {
             face.into()
-        } else if tokens.metallic {
-            gradient::Linear::new(std::f32::consts::FRAC_PI_2)
-                .add_stop(0.0, shade(face, 1.32))
-                .add_stop(0.12, shade(face, 1.12))
-                .add_stop(0.48, face)
-                .add_stop(0.52, shade(face, 0.94))
-                .add_stop(1.0, shade(face, 0.78))
-                .into()
         } else {
-            gradient::Linear::new(std::f32::consts::FRAC_PI_2)
-                .add_stop(0.0, shade(face, 1.10))
-                .add_stop(1.0, shade(face, 0.94))
-                .into()
+            face_background(theme, face)
         };
         renderer.fill_quad(
             renderer::Quad {

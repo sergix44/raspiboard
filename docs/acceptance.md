@@ -20,7 +20,7 @@ Wayland and X11 where available. Build and check packages as described in
    report `OK`. A failed build must leave previous successful downloads intact.
    Repeat with `--format deb` and `--format appimage`; each successful run must
    expose only its selected package and `SHA256SUMS` under `target/packages/`.
-2. Install with `sudo apt install ./target/packages/raspiboard_0.2.0-1_amd64.deb`.
+2. Install with `sudo apt install ./target/packages/raspiboard_0.3.0-1_amd64.deb`.
    Launch Raspiboard from the menu. Expect the supplied icon, correct window
    grouping, and a title matching the version in `Cargo.toml`.
 3. Choose an audio file through the desktop picker. Test local playback, then
@@ -31,7 +31,7 @@ Wayland and X11 where available. Build and check packages as described in
    desktop without that portal, expect a clear error while pad playback remains
    available.
 5. Save sound assignments and settings, close Raspiboard, and run
-   `./target/packages/Raspiboard-0.2.0-x86_64.AppImage`. Expect the same saved data
+   `./target/packages/Raspiboard-0.3.0-x86_64.AppImage`. Expect the same saved data
    and working playback, routing, picker, and supported hotkeys. Repeat with
    extraction-based launch and, when used, the documented per-user menu entry.
    Hover and click several pads, resize the window, open Sound options, and switch
@@ -651,7 +651,46 @@ Run `cargo run --locked` and open a pad's Options.
 4. Invalid crop input disables Play preview. While a preview plays, type an invalid
    crop value: red Stop remains usable. Switch Options to another pad and start
    its preview; only that pad's audio plays. Master Local=0 remains silent.
+5. Preview a long sound with a nonzero crop Start: a red vertical playhead starts
+   at that boundary and advances across the waveform while the amber crop handles
+   stay in place. Change the crop draft during playback: the playhead continues
+   following the playing preview. Pause from the main window: the line holds its
+   position, then continues on Resume. Stop or let the preview finish: the line
+   disappears. Restart: it begins at the current crop Start. Normal pad playback
+   and a preview for another pad must not display a playhead in these Options.
 
+
+## Main playback seeking
+
+Run `cargo run --locked` and use a sound longer than ten seconds.
+
+1. With Overlap Mode off, play the sound. A slim yellow filling bar slides up
+   from behind the bottom panel with the same beveled finish as the buttons and
+   no slider handle. Its sides align with the panel's edges; its top corners are
+   rounded and its bottom extends behind the panel's rounded top corners without
+   a notch or step. The panel keeps its normal rounded corners when idle.
+   Hover it: it smoothly grows taller upward, making it easier
+   to click without moving the panel. Move away: it returns to a slim strip
+   with rounded top corners. The hidden overlap must not paint over the panel.
+   The controls underneath retain a clear gap below the bar in both states.
+   Stop or let the sound finish: it slides back behind the panel. Check Deck
+   and Console at the initial and minimum window sizes.
+2. Click near the middle, then drag backward and forward. Release to hear the
+   new position; dragging outside the bar clamps to its ends. Both local and
+   selected application output jump together with their existing volumes.
+3. Set a crop longer than five seconds, such as Start=1 and End=9. The bar spans
+   that crop. Repeated seeks cannot leave it, and seeking backward after a
+   forward jump can reach the original Start.
+4. Pause, seek elsewhere, and wait. Expect silence and a stationary fill
+   until Resume; the new position then plays. Stop or natural completion hides
+   the bar. A crop of exactly five seconds or less does not show it.
+5. Enable Overlap Mode: its playback never shows a seek bar, even for one copy.
+   Play a non-overlapping sound, then add an overlapping sound: hide the bar
+   while both are active. Options Preview also has no main seek bar.
+6. Start dragging, then stop playback or trigger another pad with a hotkey.
+   Releasing must not seek the new sound or restart the stopped one. Losing
+   focus cancels the drag. Duration analysis for formats without duration
+   metadata must not delay audio startup.
 
 ## Global sound hotkeys
 
@@ -815,7 +854,11 @@ KDE Plasma or GNOME with an AppIndicator extension).
    the shortcut; expect playback without reopening the board.
 3. Click the tray icon or choose **Show Raspiboard**. Expect one main window with
    the same assignments, settings, volumes, routing target, and playback state.
-   Repeat hide/show and choose Show while already visible; expect one window.
+   Click the icon again while visible: expect it to hide in the tray while audio,
+   recording, and shortcuts continue. Click again to restore it. Repeat with
+   **Minimize to tray on close** off: icon clicks still toggle the window.
+   Minimize using the title bar, then click the tray icon: expect restoration.
+   Choose Show while already visible; expect one window that remains visible.
 4. Choose **Quit** while the window is closed to the tray. Expect the process to
    exit and the icon to disappear. Relaunch; expect the toggle to remain enabled.
    Disable it, relaunch, and verify closing exits again.

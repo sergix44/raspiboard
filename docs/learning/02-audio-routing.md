@@ -242,6 +242,24 @@ The Options footer follows the matching preview instance, including loading and
 paused states, so Stop remains available even after a draft becomes invalid.
 Ordinary pad playback is not treated as an Options preview.
 
+Each playback snapshot includes its source position in milliseconds.
+`buffer::PlaybackPosition` counts source frames consumed by `SampleFeed`, using
+the decoded sample rate and the crop Start captured when playback begins.
+Silence generated while waiting for routing, during an underrun or after the
+pause fade does not advance it. `Session::snapshot` reads the local player's
+position, which reaches the UI through the existing 25-millisecond worker tick.
+
+For non-overlapping normal playback, sessions publish a `SeekRange` only when
+the original cropped duration exceeds 5000 milliseconds. Prepared outputs carry
+the decoder's source duration when available; a cancellable `DurationJob` reuses
+waveform analysis as a fallback without blocking playback. `Command::Seek`
+requires a single eligible session and a matching generation ID. The session
+clamps the requested source position to the original crop, replaces its decoder,
+and retires old outputs through the usual stop fade. It retains the original
+path, crop End, clip gain, target and pause state. Each seek creates a new
+generation, rejecting stale requests. Outputs created while paused start with a
+silent transport envelope and consume no source samples until Resume.
+
 
 ## Concurrent instances and group controls
 

@@ -328,6 +328,29 @@ offset when placing its context menu. Crop spinner buttons use transparent
 backgrounds with theme text colors; the separator uses the bundled Lucide
 right-arrow glyph through the existing icon helper.
 
+`ui/seeking.rs` keeps a progress widget mounted just above the main footer.
+`seek_slider.rs` reuses native Iced slider gestures but draws a yellow filling
+bar without a handle, using `sound_pad::face_background` for the same bevel as
+the buttons. A fixed 16-pixel interaction band holds a 3-pixel resting bar that
+expands upward to 10 pixels on hover. Iced animations reveal/retract the bar
+from behind the panel over 220 milliseconds and expand it over 140 milliseconds,
+without moving the footer. The last fill is retained until retraction ends;
+hidden bars ignore input, and redraw requests stop when motion settles.
+The fill and its clip extend behind the footer by the panel corner radius plus
+one pixel. A native Iced Stack puts the footer in a later render layer so it
+actually covers that overlap, keeping its rounded corners while avoiding a gap
+between the bar and panel. The bar's upper corners use the full panel radius
+even when the exposed strip is thin.
+The footer keeps 20 pixels of top padding above its controls and 12 pixels on
+the other sides, leaving room between the bar and the raised button faces.
+Drag updates remain local until release;
+generation IDs keep ordinary position updates from overriding the drag and
+discard stale input after a new playback or seek. Snapshot changes clear stale
+drafts. The progress widget restricts input to pointer/touch gestures and cancels
+the drag on focus loss. Keyboard and wheel events do not create uncommitted
+drafts. Generation changes reset native drag state while retaining the reveal
+animation, so seeking does not replay the entrance animation.
+
 `ui/waveform.rs` draws a bounded peak summary using Iced Canvas. A keyed column
 resets widget state for each analysis generation. Drag previews update the crop
 fields without writing to disk; release commits one valid range. Handle drags
@@ -338,6 +361,12 @@ their original 10-pixel hit distance remains unchanged. `gain_slider.rs` wraps
 the native slider in MouseArea so an ordinary hover wheel changes gain by 0.5 dB.
 The child retains native Ctrl-wheel handling, and captured events cannot also
 scroll the surrounding window or trigger a second step.
+
+The waveform draws a red playhead over the peaks and crop handles using the
+matching preview instance's source position. `button_options.rs` passes it only
+for a playing or paused preview of the pad currently open in Options; loading,
+stopped previews and ordinary pad playback do not show it. Position updates
+preserve the canvas drag state.
 
 The Hotkey row below Crop opens the desktop chooser through `Action::SetHotkey`.
 `src/ui/hotkeys.rs` builds a snapshot of enabled sound IDs and their descriptions;

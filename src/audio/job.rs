@@ -40,6 +40,7 @@ pub struct Decoded {
 }
 
 pub struct DecodedOutputs {
+    pub duration_ms: Option<u64>,
     pub remote: Option<Decoded>,
     pub local: Decoded,
 }
@@ -47,6 +48,34 @@ pub struct DecodedOutputs {
 pub struct DecodeJob {
     pub ready: mpsc::Receiver<Result<DecodedOutputs, String>>,
     cancel: Arc<AtomicBool>,
+}
+
+pub struct DurationJob {
+    pub ready: mpsc::Receiver<Result<u64, String>>,
+    cancel: Arc<AtomicBool>,
+}
+
+impl DurationJob {
+    pub fn start(path: PathBuf) -> Result<Self, String> {
+        let (sender, ready) = mpsc::sync_channel(1);
+        let cancel = Arc::new(AtomicBool::new(false));
+        let cancelled = cancel.clone();
+        thread::Builder::new()
+            .name("audio-duration".into())
+            .spawn(move || {
+                let result = super::waveform::analyze(&path, &cancelled)
+                    .map(|waveform| waveform.duration_ms);
+                let _ = sender.send(result);
+            })
+            .map_err(|error| format!("Cannot start audio duration analysis: {error}"))?;
+        Ok(Self { ready, cancel })
+    }
+}
+
+impl Drop for DurationJob {
+    fn drop(&mut self) {
+        self.cancel.store(true, Ordering::Release);
+    }
 }
 
 impl DecodeJob {
@@ -88,7 +117,19 @@ impl DecodeJob {
                 };
                 let remote = remote_enabled.then(&mut output);
                 let local = output();
-                if ready_tx.send(Ok(DecodedOutputs { remote, local })).is_err() {
+                let duration_ms = decoder.frames.map(|frames| {
+                    (u128::from(frames) * 1000)
+                        .div_ceil(u128::from(decoder.rate))
+                        .min(u128::from(u64::MAX)) as u64
+                });
+                if ready_tx
+                    .send(Ok(DecodedOutputs {
+                        duration_ms,
+                        remote,
+                        local,
+                    }))
+                    .is_err()
+                {
                     return;
                 }
                 let result = produce(&mut decoder, &mut producers, &cancelled, range);

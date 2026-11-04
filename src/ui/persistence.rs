@@ -90,6 +90,7 @@ impl Soundboard {
             sound_button_scale: saved.settings.sound_button_scale,
             controller: None,
             audio: Snapshot::default(),
+            seek_draft: None,
             active_button: buttons.first().map(|button| button.id.clone()),
             buttons,
             search: String::new(),

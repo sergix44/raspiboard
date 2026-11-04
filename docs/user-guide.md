@@ -64,6 +64,22 @@ that clip. Triggering it again restarts it. With **Overlap Mode on**, each
 trigger adds another instance without stopping the others. A small dot marks
 pads with overlap enabled. Pause and Stop apply to all current instances.
 
+When a sound's playable range is longer than five seconds and Overlap Mode is
+off, a slim yellow progress bar slides up from behind the bottom panel and fills
+as the sound plays. It spans the panel's full width, with rounded top corners and
+square bottom corners extending behind the panel's rounded top edge for a flush
+stacked appearance. The panel keeps its normal rounded corners when idle.
+It uses the buttons' beveled
+finish and grows slightly taller
+on hover. Click to jump, or drag along the bar and release to seek backward or
+forward. The bar covers the saved crop, so seeking stays between Start and End.
+Seeking while paused keeps the sound paused until Resume. It preserves the
+current output routing and volume.
+The bar slides back behind the panel when playback stops or finishes. It is
+hidden for previews, overlap-enabled sounds, and while more than one sound is
+playing. For files without duration metadata, it appears after background
+analysis finishes.
+
 The application dropdown discovers recording streams automatically. An
 application generally appears after it opens a microphone stream, such as when
 joining a call or starting a recording. Select it to mix clips alongside its
@@ -163,6 +179,10 @@ does not send audio to the selected application. Preview replaces current
 playback and becomes a red **Stop** button while active. Original audio files
 are never modified.
 
+A red vertical line follows the preview's current position on the waveform,
+starting at the crop's Start time. The amber crop handles stay in place. Pausing
+holds the line still; stopping or finishing the preview removes it.
+
 ## Global hotkeys
 
 In **Options → Hotkey**, click **Set** and choose a combination in the desktop's
@@ -238,8 +258,11 @@ you close the main window. The setting saves immediately and defaults to off.
 Audio playback, routing, and global shortcuts continue while the window is closed.
 Settings and Sound options close with the main window.
 
-Click the tray icon or choose **Show Raspiboard** from its menu to reopen the
-board. Choose **Quit** to exit and finish pending saves, regardless of the toggle.
+Click the tray icon to toggle the board: it reopens a hidden or minimized window,
+and hides an open window in the tray. This works regardless of the close setting.
+Audio playback, recording, routing, and shortcuts continue while hidden.
+Choose **Show Raspiboard** from the tray menu to always reopen or focus the board.
+Choose **Quit** to exit and finish pending saves, regardless of the close setting.
 The tray icon is available whenever the desktop supports StatusNotifierItem, on
 both Wayland and X11. GNOME needs a tray extension such as AppIndicator support.
 If no tray is available at startup, closing the main window exits normally; restart

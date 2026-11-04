@@ -10,11 +10,13 @@ pub(super) fn view<'a, Message: Clone + 'a>(
     waveform: &'a Waveform,
     start_ms: Option<u64>,
     end_ms: Option<u64>,
+    playhead_ms: Option<u64>,
     on_change: impl Fn(u64, u64, bool) -> Message + 'a,
 ) -> Element<'a, Message> {
     Canvas::new(Selection {
         waveform,
         range: Range::new(start_ms, end_ms, waveform.duration_ms),
+        playhead_ms,
         on_change,
     })
     .width(Length::Fill)
@@ -105,6 +107,7 @@ struct State {
 struct Selection<'a, F> {
     waveform: &'a Waveform,
     range: Range,
+    playhead_ms: Option<u64>,
     on_change: F,
 }
 
@@ -279,6 +282,19 @@ where
                 handle_color,
             );
         }
+        if let Some(position) = self.playhead_ms {
+            let x = x_at(
+                position.min(self.waveform.duration_ms),
+                bounds.width,
+                self.waveform.duration_ms,
+            )
+            .clamp(1.0, (bounds.width - 1.0).max(1.0));
+            frame.fill_rectangle(
+                Point::new(x - 1.0, 0.0),
+                Size::new(2.0, bounds.height),
+                palette.danger.base.color,
+            );
+        }
         vec![frame.into_geometry()]
     }
 
@@ -334,6 +350,7 @@ mod tests {
         let waveform = sample_waveform();
         let selection = Selection {
             waveform: &waveform,
+            playhead_ms: None,
             range: Range {
                 start: 200,
                 end: 800,
@@ -387,6 +404,7 @@ mod tests {
         let callback = |a, b, c| (a, b, c);
         let selection = Selection {
             waveform: &waveform,
+            playhead_ms: None,
             range: Range {
                 start: 200,
                 end: 800,
@@ -412,6 +430,7 @@ mod tests {
             Some((500, 600, false))
         );
         let redrawn = Selection {
+            playhead_ms: Some(550),
             range: Range {
                 start: 500,
                 end: 600,
@@ -435,6 +454,7 @@ mod tests {
         let callback = |a, b, c| (a, b, c);
         let selection = Selection {
             waveform: &waveform,
+            playhead_ms: None,
             range: Range {
                 start: 200,
                 end: 800,

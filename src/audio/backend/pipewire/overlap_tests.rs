@@ -7,7 +7,7 @@ fn long_tone() -> std::path::PathBuf {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("test-results/overlap/long-tone.wav");
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        let data_size = 32768_u32 * 2;
+        let data_size = 480000_u32 * 2;
         let mut bytes = Vec::new();
         bytes.extend(b"RIFF");
         bytes.extend((36 + data_size).to_le_bytes());
@@ -21,7 +21,7 @@ fn long_tone() -> std::path::PathBuf {
         bytes.extend(16_u16.to_le_bytes());
         bytes.extend(b"data");
         bytes.extend(data_size.to_le_bytes());
-        for _ in 0..32768 {
+        for _ in 0..480000 {
             bytes.extend(16384_i16.to_le_bytes());
         }
         std::fs::write(&path, bytes).unwrap();
@@ -38,6 +38,103 @@ fn play(id: &str, overlap: bool) -> Command {
         target: None,
         options: PlaybackOptions::default(),
     }
+}
+
+#[test]
+fn seeking_preserves_original_crop_gain_and_pause_and_rejects_stale_requests() {
+    let mut engine = Engine::default();
+    let mut command = play("long", false);
+    if let Command::Play { options, .. } = &mut command {
+        options.start_ms = Some(1000);
+        options.end_ms = Some(9000);
+        options.relative_volume = Some(-6.0);
+    }
+    engine.command(command, &OutputVolumes::default());
+    let range = engine.snapshot.playbacks[0].seek_range.unwrap();
+    assert_eq!((range.start_ms, range.end_ms), (1000, 9000));
+    engine.snapshot.playback = PlaybackStatus::Playing;
+    engine.command(Command::Pause, &OutputVolumes::default());
+    engine.command(
+        Command::Seek {
+            playback_id: range.playback_id,
+            position_ms: 6000,
+        },
+        &OutputVolumes::default(),
+    );
+    let snapshot = &engine.snapshot.playbacks[0];
+    assert_eq!(snapshot.position_ms, 6000);
+    assert_eq!(snapshot.status, PlaybackStatus::Paused);
+    let next = snapshot.seek_range.unwrap();
+    assert_ne!(next.playback_id, range.playback_id);
+    assert_eq!((next.start_ms, next.end_ms), (1000, 9000));
+
+    engine.command(
+        Command::Seek {
+            playback_id: range.playback_id,
+            position_ms: 8000,
+        },
+        &OutputVolumes::default(),
+    );
+    assert_eq!(engine.snapshot.playbacks[0].position_ms, 6000);
+    engine.command(
+        Command::Seek {
+            playback_id: next.playback_id,
+            position_ms: 0,
+        },
+        &OutputVolumes::default(),
+    );
+    assert_eq!(engine.snapshot.playbacks[0].position_ms, 1000);
+    assert_eq!(engine.sessions[0].snapshot().status, PlaybackStatus::Paused);
+    engine.command(Command::Resume, &OutputVolumes::default());
+    assert_eq!(engine.snapshot.playbacks[0].status, PlaybackStatus::Loading);
+    let next = engine.snapshot.playbacks[0].seek_range.unwrap();
+    engine.command(
+        Command::Seek {
+            playback_id: next.playback_id,
+            position_ms: u64::MAX,
+        },
+        &OutputVolumes::default(),
+    );
+    assert_eq!(engine.snapshot.playbacks[0].position_ms, 8999);
+    let output = engine.sessions[0]
+        .job
+        .ready
+        .recv_timeout(Duration::from_secs(2))
+        .unwrap()
+        .unwrap();
+    assert!((output.local.clip_gain - 0.5011872).abs() < 0.00001);
+    assert!(output.remote.is_none());
+}
+
+#[test]
+fn seek_ranges_require_more_than_five_seconds_and_exclude_overlap_and_preview() {
+    for (overlap, duration, visible) in [
+        (false, 5000, false),
+        (false, 5001, true),
+        (true, 8000, false),
+    ] {
+        let mut engine = Engine::default();
+        let mut command = play("long", overlap);
+        if let Command::Play { options, .. } = &mut command {
+            options.start_ms = Some(1000);
+            options.end_ms = Some(1000 + duration);
+        }
+        engine.command(command, &OutputVolumes::default());
+        assert_eq!(engine.snapshot.playbacks[0].seek_range.is_some(), visible);
+    }
+    let mut engine = Engine::default();
+    engine.command(
+        Command::Preview {
+            button_id: "preview".into(),
+            path: long_tone(),
+            options: PlaybackOptions {
+                end_ms: Some(8000),
+                ..Default::default()
+            },
+        },
+        &OutputVolumes::default(),
+    );
+    assert!(engine.snapshot.playbacks[0].seek_range.is_none());
 }
 
 fn ready(engine: &Engine) -> Vec<crate::audio::job::DecodedOutputs> {
@@ -297,6 +394,8 @@ fn group_transport_stays_playing_until_all_playing_instances_finish() {
         let instances: Vec<_> = statuses
             .into_iter()
             .map(|status| PlaybackInstance {
+                position_ms: 0,
+                seek_range: None,
                 button_id: "horn".into(),
                 status,
                 preview: false,

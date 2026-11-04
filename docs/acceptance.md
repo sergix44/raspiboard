@@ -805,6 +805,12 @@ Run `cargo run --locked` with two long sounds and one shorter sound assigned.
 2. Enable overlap and click the pad five times quickly. Hear five independently
    started copies locally; the pad remains illuminated until the last finishes.
    Repeat via its global hotkey, including when another app has focus.
+   Select a recording application and repeat several bursts while earlier copies
+   end. Both outputs should keep working without channel-change errors, unknown
+   output-port failures, or PipeWire disconnect/reconnect cycles. Repeat with a
+   cropped MP3: the log must not gain `invalid main_data_begin` reservoir warnings.
+   Longer MP3 crop starts may take more preparation time; Stop or replacing the
+   group must still cancel pending decoding promptly.
 3. Start an ordinary long pad, then an overlapping short pad. Hear both. When the
    short sound ends, the long sound continues and its pad remains illuminated;
    the footer still offers Pause. Repeat with copies of the same long sound

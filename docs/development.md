@@ -168,6 +168,10 @@ settings/button round trips, grid ordering, malformed-file preservation, atomic
 writes, shutdown flushing, and independent save-error recovery. They also check
 that restoring saved data does not start playback or select a recording target.
 These tests do not connect to a live audio server or open a window.
+Regressions cover MP3 crop sample equality without reservoir underflow warnings,
+stale ports and links after node removal/reuse, and benign resource-removal errors
+that must not restart the audio worker. The MP3 seek fixture is generated with
+the command in `tests/fixtures/audio/README.md`.
 Seeking tests cover the strict five-second crop threshold, overlap/preview
 exclusion, crop bounds, backward and forward jumps, generation rejection, pause
 preservation, silent paused starts, independent duration analysis, and pointer

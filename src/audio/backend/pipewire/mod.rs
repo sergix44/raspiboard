@@ -456,8 +456,11 @@ pub fn run(
     }
 }
 
-fn connection_error(id: u32, message: &str) -> Option<String> {
-    (id == pw::core::PW_ID_CORE).then(|| message.to_owned())
+fn connection_error(id: u32, result: i32, message: &str) -> Option<String> {
+    let resource_gone = result.checked_neg().is_some_and(|errno| {
+        std::io::Error::from_raw_os_error(errno).kind() == std::io::ErrorKind::NotFound
+    });
+    (id == pw::core::PW_ID_CORE && !resource_gone).then(|| message.to_owned())
 }
 
 fn connection(
@@ -476,9 +479,10 @@ fn connection(
     let weak_loop = mainloop.downgrade();
     let _core_listener = core
         .add_listener_local()
-        .error(move |id, _, _, message| {
-            let Some(error) = connection_error(id, message) else {
-                // Owned sinks and links report errors through their session's proxy listeners.
+        .error(move |id, sequence, result, message| {
+            let Some(error) = connection_error(id, result, message) else {
+                // Removed resources can race with queued destroy requests on the core.
+                log::debug!(target: "raspiboard::audio", "PipeWire object request: id={id} sequence={sequence} result={result}: {message}");
                 return;
             };
             *on_error.borrow_mut() = Some(error);

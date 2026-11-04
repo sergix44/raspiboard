@@ -125,3 +125,92 @@ fn decodes_opus_in_ogg_and_webm() {
         assert!(peak > 0.01, "{name} decoded to silence");
     }
 }
+
+thread_local! {
+    static MP3_WARNINGS: std::cell::RefCell<Option<Vec<String>>> = const { std::cell::RefCell::new(None) };
+}
+
+struct DecodeTestLogger;
+
+impl log::Log for DecodeTestLogger {
+    fn enabled(&self, metadata: &log::Metadata<'_>) -> bool {
+        metadata.level() <= log::Level::Warn
+    }
+
+    fn log(&self, record: &log::Record<'_>) {
+        if record.target() == "symphonia_bundle_mp3::layer3" && record.level() == log::Level::Warn {
+            MP3_WARNINGS.with_borrow_mut(|warnings| {
+                if let Some(warnings) = warnings {
+                    warnings.push(record.args().to_string());
+                }
+            });
+        }
+    }
+
+    fn flush(&self) {}
+}
+
+#[test]
+fn mp3_seek_preserves_reservoir_and_crop_samples() {
+    static LOGGER: DecodeTestLogger = DecodeTestLogger;
+    static INIT: std::sync::Once = std::sync::Once::new();
+    INIT.call_once(|| {
+        log::set_logger(&LOGGER).unwrap();
+        log::set_max_level(log::LevelFilter::Warn);
+    });
+    let path = std::env::var_os("RASPIBOARD_MP3_SEEK_INPUT")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/audio/seek.mp3")
+        });
+    let start_ms = std::env::var("RASPIBOARD_MP3_SEEK_START_MS")
+        .map(|value| value.parse::<u64>().unwrap())
+        .unwrap_or(1500);
+    let open = || ClipDecoder::open(Box::new(std::fs::File::open(&path).unwrap()), None).unwrap();
+    let mut linear = open();
+    let start = start_ms * u64::from(linear.rate) / 1000;
+    let channels = linear.channels;
+    let collect = |decoder: &mut ClipDecoder, mut position: u64| {
+        let mut selected = Vec::new();
+        while selected.len() < 2048 {
+            let Some(samples) = decoder.next_samples().unwrap() else {
+                break;
+            };
+            for frame in samples.chunks_exact(channels) {
+                if position >= start && selected.len() < 2048 {
+                    selected.extend_from_slice(frame);
+                }
+                position += 1;
+            }
+        }
+        selected
+    };
+    let before = std::time::Instant::now();
+    let expected = collect(&mut linear, 0);
+    let linear_ms = before.elapsed().as_secs_f64() * 1000.0;
+    assert_eq!(expected.len(), 2048);
+    let mut seeked = open();
+    MP3_WARNINGS.with_borrow_mut(|warnings| *warnings = Some(Vec::new()));
+    let before = std::time::Instant::now();
+    seeked.seek_to_frame(start).unwrap();
+    let first_frame = seeked.first_frame;
+    let selected = collect(&mut seeked, first_frame);
+    let seek_ms = before.elapsed().as_secs_f64() * 1000.0;
+    let warnings = MP3_WARNINGS.with_borrow_mut(|warnings| warnings.take().unwrap());
+    assert_eq!(selected.len(), expected.len());
+    let error = selected
+        .iter()
+        .zip(&expected)
+        .map(|(a, b)| (a - b).abs())
+        .sum::<f32>()
+        / selected.len() as f32;
+    eprintln!(
+        "mp3 crop={} start_ms={start_ms} linear_ms={linear_ms:.2} seek_ms={seek_ms:.2} first_frame={first_frame} error={error:.8} warnings={warnings:?}",
+        path.display()
+    );
+    assert!(error < 0.00001, "seeking changed crop audio by {error}");
+    assert!(
+        warnings.is_empty(),
+        "seeking decoded packets without their bit reservoir: {warnings:?}"
+    );
+}

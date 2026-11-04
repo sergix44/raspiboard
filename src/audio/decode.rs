@@ -1,6 +1,9 @@
 use std::sync::LazyLock;
 use symphonia::core::{
-    codecs::{audio::AudioDecoder, registry::CodecRegistry},
+    codecs::{
+        audio::{AudioDecoder, well_known::CODEC_ID_MP3},
+        registry::CodecRegistry,
+    },
     formats::{FormatReader, SeekMode, SeekTo, TrackType, probe::Hint},
     io::{MediaSource, MediaSourceStream},
     units::{TimeBase, Timestamp},
@@ -74,6 +77,13 @@ impl ClipDecoder {
     }
 
     pub fn seek_to_frame(&mut self, frame: u64) -> Result<(), String> {
+        // MP3 reference packets can themselves depend on earlier reservoir bytes.
+        // Resetting at a demuxer seek therefore decodes an incomplete first packet,
+        // even with preroll. Keep MP3 decoding contiguous; the crop producer discards
+        // preceding samples and checks cancellation between packets.
+        if self.decoder.codec_params().codec == CODEC_ID_MP3 {
+            return Ok(());
+        }
         // Transform codecs need preceding packets to rebuild their overlap state.
         let preroll = frame.saturating_sub(u64::from(self.rate) / 10);
         if preroll == 0 {

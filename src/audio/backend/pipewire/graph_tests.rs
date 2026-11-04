@@ -328,6 +328,93 @@ fn keeps_unresolved_sources_visible_and_distinguishes_reused_ids() {
 }
 
 #[test]
+fn removing_a_node_discards_its_ports_before_the_node_id_can_be_reused() {
+    let mut graph = Graph::default();
+    graph.insert(10, Kind::Node, props(&[("object.serial", "100")]));
+    graph.insert(20, Kind::Node, props(&[("object.serial", "200")]));
+    for (id, node, direction) in [(11, "10", "out"), (21, "20", "in")] {
+        graph.insert(
+            id,
+            Kind::Port,
+            props(&[
+                ("node.id", node),
+                ("port.direction", direction),
+                ("audio.channel", "MONO"),
+            ]),
+        );
+    }
+    graph.insert(
+        30,
+        Kind::Link,
+        props(&[
+            ("link.output.node", "10"),
+            ("link.output.port", "11"),
+            ("link.input.node", "20"),
+            ("link.input.port", "21"),
+            ("link.state", "active"),
+        ]),
+    );
+    assert_eq!(graph.port_pairs(10, 20).unwrap(), vec![(11, 21)]);
+
+    graph.remove(10);
+    graph.insert(10, Kind::Node, props(&[("object.serial", "999")]));
+    assert!(
+        graph.port_pairs(10, 20).is_err(),
+        "old ports must not be offered for a new sink with a recycled node ID"
+    );
+    assert!(!graph.link_ready(30).unwrap());
+    assert!(!graph.feeds(10, 20));
+    graph.insert(
+        12,
+        Kind::Port,
+        props(&[
+            ("node.id", "10"),
+            ("port.direction", "out"),
+            ("audio.channel", "MONO"),
+        ]),
+    );
+    assert_eq!(graph.port_pairs(10, 20).unwrap(), vec![(12, 21)]);
+}
+
+#[test]
+fn removing_a_port_discards_connections_that_still_reference_it() {
+    let mut graph = Graph::default();
+    graph.insert(
+        11,
+        Kind::Port,
+        props(&[
+            ("node.id", "10"),
+            ("port.direction", "out"),
+            ("audio.channel", "MONO"),
+        ]),
+    );
+    graph.insert(
+        21,
+        Kind::Port,
+        props(&[
+            ("node.id", "20"),
+            ("port.direction", "in"),
+            ("audio.channel", "MONO"),
+        ]),
+    );
+    graph.insert(
+        30,
+        Kind::Link,
+        props(&[
+            ("link.output.node", "10"),
+            ("link.output.port", "11"),
+            ("link.input.node", "20"),
+            ("link.input.port", "21"),
+            ("link.state", "active"),
+        ]),
+    );
+    graph.remove(11);
+    assert!(!graph.link_ready(30).unwrap());
+    assert!(!graph.has_link(10, 20).unwrap());
+    assert!(!graph.feeds(10, 20));
+}
+
+#[test]
 fn matches_channels_instead_of_port_order_or_names() {
     let mut graph = Graph::default();
     for (id, node, direction, channel) in [

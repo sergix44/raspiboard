@@ -39,12 +39,35 @@ impl Graph {
     }
 
     pub fn remove(&mut self, id: u32) {
-        if self
-            .objects
-            .remove(&id)
-            .is_some_and(|(kind, _)| kind == Kind::Metadata)
-        {
-            self.defaults.clear();
+        let Some((kind, _)) = self.objects.remove(&id) else {
+            return;
+        };
+        match kind {
+            Kind::Node => {
+                let ports: Vec<_> = self
+                    .objects
+                    .iter()
+                    .filter_map(|(&port, (kind, props))| {
+                        (*kind == Kind::Port && number(props, "node.id") == Some(id))
+                            .then_some(port)
+                    })
+                    .collect();
+                for port in ports {
+                    self.remove(port);
+                }
+                self.objects.retain(|_, (kind, props)| {
+                    *kind != Kind::Link
+                        || (number(props, "link.output.node") != Some(id)
+                            && number(props, "link.input.node") != Some(id))
+                });
+            }
+            Kind::Port => self.objects.retain(|_, (kind, props)| {
+                *kind != Kind::Link
+                    || (number(props, "link.output.port") != Some(id)
+                        && number(props, "link.input.port") != Some(id))
+            }),
+            Kind::Metadata => self.defaults.clear(),
+            Kind::Link => {}
         }
     }
 

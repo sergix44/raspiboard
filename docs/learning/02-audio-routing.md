@@ -88,6 +88,12 @@ removals. Listeners also track changes to their properties. The graph stores:
 - Ports: a node's individual audio inputs and outputs.
 - Links: connections from an output port to an input port.
 
+Removing a node immediately invalidates its ports and incident links; removing
+a port invalidates links that reference it. Registry removal callbacks may arrive
+separately, and a new sink can reuse a node ID before the old port notifications
+finish. Cascading invalidation prevents new overlap instances from linking to
+stale ports or seeing an ambiguous channel layout during that interval.
+
 Recording streams use `media.class = Stream/Input/Audio`. Raspiboard traces their
 incoming links backwards to find a physical audio source. A visited set prevents
 cycles from making this search loop forever. It excludes its own nodes and known
@@ -118,12 +124,20 @@ Losing the selected stream leaves None selected rather than choosing a replaceme
 appearance immediately, while gain and crop wait until the next Play. Decoding
 counts source frames so Start is inclusive and End exclusive, even across packet
 boundaries. When a container reports its frame count, crop validation uses that
-count and an accurate seek with 100 ms of decoder preroll. The first emitted
+count and, for codecs other than MP3, an accurate seek with 100 ms of decoder preroll. The first emitted
 packet's timestamp and encoder trim establish the sample position, preserving
 crop boundaries across compressed formats. Formats without frame counts retain
 the bounded validation scan; failed seeks fall back to decoding from the start.
 Default playback skips crop validation. Cancellation remains active throughout scanning,
 and routing's timeout starts once decoded outputs are ready to connect.
+
+MP3 keeps its decoder state contiguous from the beginning of the stream, and the
+crop producer discards preceding frames with cancellation checks. MP3 reference
+packets can depend on earlier bit-reservoir data even after a demuxer preroll;
+decoding them after a reset produced underflow warnings in discarded audio.
+Sequential warm-up avoids those warnings and preserves exact crop samples.
+Its preparation cost increases with the crop position; other codecs retain
+their native fast seek path.
 
 Crop start/end are in milliseconds; frame boundaries round up to the first frame
 in the interval. The displayed rounded final millisecond is accepted and clamped
@@ -191,9 +205,15 @@ Readiness, errors, completion, and draining inspect only outputs that exist;
 local-only playback never waits for a remote stream. If an active output fails,
 its instance stops and reports an error while unrelated instances continue.
 A PipeWire connection failure or loss of the selected app stops the whole group.
-Core error events carry the affected proxy ID. Only errors for the core itself
-fail the connection; owned sink and link errors are handled by their session's
-proxy listeners, avoiding cancellation of unrelated instances.
+Core error events carry the affected proxy ID and error code. An ENOENT
+(resource already gone) response can be sent on the core when a queued destroy
+request races with resource removal. It is an object-lifecycle diagnostic,
+not a lost connection; it does not reconnect or cancel the playback group.
+Other core errors still fail the connection. Owned sink and link errors are
+handled by their session's proxy listeners, avoiding cancellation of unrelated
+instances. This follows the distinction in PipeWire's
+[native protocol handling](https://github.com/PipeWire/pipewire/blob/1.6.2/src/modules/module-protocol-native/protocol-native.c)
+and [connection-error handling](https://github.com/PipeWire/pipewire/blob/1.6.2/src/modules/module-protocol-pulse/manager.c).
 Non-finite samples are silenced, and samples outside the normal range are clipped.
 
 `Arc<T>` provides shared ownership across threads. Atomic values communicate

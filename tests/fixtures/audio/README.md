@@ -15,3 +15,9 @@ mono stream must use a legal MPEG Layer II bitrate. The FLAC fixture is 0.04 s.
 The `tone-opus.ogg` and `tone-opus.webm` fixtures use libopus at 48 kHz with
 `-ac 2`. The remaining WebM fixture uses Vorbis. Opus is supplied through the
 Symphonia libopus adapter.
+
+The 2 s `seek.mp3` fixture exercises reservoir-preserving MP3 crop seeks:
+
+```sh
+ffmpeg -f lavfi -i 'sine=frequency=440:duration=2:sample_rate=44100' -c:a libmp3lame -b:a 128k seek.mp3
+```

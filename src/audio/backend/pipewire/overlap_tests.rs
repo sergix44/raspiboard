@@ -460,10 +460,26 @@ fn resume_and_new_overlap_clear_paused_instances_even_while_another_is_finishing
 
 #[test]
 fn pipewire_object_errors_do_not_become_connection_failures() {
-    assert_eq!(connection_error(42, "link failed"), None);
-    assert_eq!(connection_error(17, "sink failed"), None);
+    assert_eq!(connection_error(42, -22, "link failed"), None);
+    assert_eq!(connection_error(17, -22, "sink failed"), None);
     assert_eq!(
-        connection_error(pipewire::core::PW_ID_CORE, "connection lost"),
+        connection_error(pipewire::core::PW_ID_CORE, -32, "connection lost"),
         Some("connection lost".into())
+    );
+}
+
+#[test]
+fn destroying_an_already_removed_resource_does_not_reconnect_pipewire() {
+    assert_eq!(
+        connection_error(pipewire::core::PW_ID_CORE, -2, "unknown resource 468 op:7"),
+        None
+    );
+    assert_eq!(
+        connection_error(pipewire::core::PW_ID_CORE, -2, "unknown resource 205 op:7"),
+        None
+    );
+    assert_eq!(
+        connection_error(pipewire::core::PW_ID_CORE, -32, "Broken pipe"),
+        Some("Broken pipe".into())
     );
 }

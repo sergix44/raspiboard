@@ -490,6 +490,171 @@ fn target_labels_do_not_change_identity_and_stale_ids_cannot_resolve() {
 #[test]
 fn compact_labels_preserve_existing_application_presentation() {
     for name in ["Recorder", "Recorder [20]", "Recorder — Capture audio"] {
-        assert_eq!(compact_label(name, 20), "Recorder [20]");
+        assert_eq!(compact_label(name, 20, None), "Recorder [20]");
+    }
+}
+
+type Discover = fn(&Graph) -> Vec<Target>;
+
+const SELECTORS: [(&str, Discover); 2] = [
+    ("Stream/Input/Audio", Graph::targets),
+    ("Stream/Output/Audio", Graph::sources),
+];
+
+fn named_stream(graph: &mut Graph, id: u32, class: &str, metadata: &[(&str, &str)]) {
+    capture(graph, id, &format!("{id}00"));
+    graph.update(
+        id,
+        props(&[("application.name", "Browser"), ("media.class", class)]),
+    );
+    graph.update(id, props(metadata));
+}
+
+#[test]
+fn selector_labels_prefer_media_titles_then_names_and_ignore_blank_metadata() {
+    for (class, discover) in SELECTORS {
+        for (title, name, expected) in [
+            (
+                "  Café — [Live]  ",
+                "AudioStream",
+                "Browser [Café — [Live]]",
+            ),
+            (" \t", "  Voice call  ", "Browser [Voice call]"),
+            ("", " \t", "Browser [20]"),
+        ] {
+            let mut graph = Graph::default();
+            named_stream(
+                &mut graph,
+                20,
+                class,
+                &[("media.title", title), ("media.name", name)],
+            );
+            let target = discover(&graph).remove(0);
+            assert_eq!(target.display_label, expected, "{class}");
+            assert_eq!(graph.resolve(&target), Ok(20));
+        }
+    }
+}
+
+#[test]
+fn selector_labels_keep_ids_only_for_ambiguous_titles_in_the_same_selector() {
+    for (class, discover) in SELECTORS {
+        let mut graph = Graph::default();
+        for (id, title) in [(20, "Voice call"), (21, " Voice call "), (22, "Music")] {
+            named_stream(&mut graph, id, class, &[("media.title", title)]);
+        }
+        named_stream(
+            &mut graph,
+            23,
+            class,
+            &[("application.name", "Other"), ("media.title", "Music")],
+        );
+        let opposite = if class == "Stream/Input/Audio" {
+            "Stream/Output/Audio"
+        } else {
+            "Stream/Input/Audio"
+        };
+        named_stream(&mut graph, 24, opposite, &[("media.title", "Music")]);
+        named_stream(
+            &mut graph,
+            25,
+            class,
+            &[("media.title", "Music"), ("media.role", "DSP")],
+        );
+        let labels: Vec<_> = discover(&graph)
+            .into_iter()
+            .map(|target| target.display_label)
+            .collect();
+        assert_eq!(
+            labels,
+            [
+                "Browser [20]",
+                "Browser [21]",
+                "Browser [Music]",
+                "Other [Music]"
+            ],
+            "{class}"
+        );
+    }
+}
+
+#[test]
+fn selector_labels_resolve_collisions_between_titles_and_id_fallbacks() {
+    for (class, discover) in SELECTORS {
+        let mut graph = Graph::default();
+        for (id, title) in [(20, "Voice call"), (21, "Voice call"), (22, "20")] {
+            named_stream(&mut graph, id, class, &[("media.title", title)]);
+        }
+        let labels: Vec<_> = discover(&graph)
+            .into_iter()
+            .map(|target| target.display_label)
+            .collect();
+        assert_eq!(
+            labels,
+            ["Browser [20]", "Browser [21]", "Browser [22]"],
+            "{class}"
+        );
+    }
+}
+
+#[test]
+fn selector_title_updates_preserve_identity_and_restore_titles_after_duplicates_close() {
+    for (class, discover) in SELECTORS {
+        let mut graph = Graph::default();
+        named_stream(&mut graph, 20, class, &[("media.title", "First title")]);
+        let original = discover(&graph).remove(0);
+        graph.update(20, props(&[("media.title", "New title")]));
+        let renamed = discover(&graph).remove(0);
+        assert_eq!(renamed.display_label, "Browser [New title]");
+        assert_eq!(renamed.id, original.id);
+        assert_eq!(graph.resolve(&original), Ok(20));
+
+        named_stream(&mut graph, 21, class, &[("media.title", "New title")]);
+        assert_eq!(discover(&graph)[0].display_label, "Browser [20]");
+        graph.remove(21);
+        assert_eq!(discover(&graph)[0].display_label, "Browser [New title]");
+        graph.update(20, props(&[("media.title", "")]));
+        let untitled = discover(&graph).remove(0);
+        assert_eq!(untitled.display_label, "Browser [20]");
+        assert_eq!(untitled.id, original.id);
+    }
+}
+
+#[test]
+fn selector_titles_replace_an_existing_id_suffix_on_application_names() {
+    for (class, discover) in SELECTORS {
+        let mut graph = Graph::default();
+        named_stream(
+            &mut graph,
+            20,
+            class,
+            &[
+                ("application.name", "Browser [20] — Capture audio"),
+                ("media.name", "Voice call"),
+            ],
+        );
+        assert_eq!(discover(&graph)[0].display_label, "Browser [Voice call]");
+    }
+}
+
+#[test]
+fn selector_labels_discard_title_metadata_omitted_from_node_info_updates() {
+    for (class, discover) in SELECTORS {
+        let mut graph = Graph::default();
+        named_stream(
+            &mut graph,
+            20,
+            class,
+            &[("media.title", "Old title"), ("media.name", "AudioStream")],
+        );
+        let original = discover(&graph).remove(0);
+        graph.update(20, props(&[("media.name", "New stream name")]));
+        let renamed = discover(&graph).remove(0);
+        assert_eq!(renamed.display_label, "Browser [New stream name]");
+        assert_eq!(renamed.id, original.id);
+        graph.update(20, Properties::new());
+        let untitled = discover(&graph).remove(0);
+        assert_eq!(untitled.display_label, "Browser [20]");
+        assert_eq!(graph.resolve(&original), Ok(20));
     }
 }

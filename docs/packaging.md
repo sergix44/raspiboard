@@ -18,42 +18,35 @@ in the build container. PHP is required for building packages, not running them.
 
 ## Automated builds on GitHub
 
-The **package** workflow runs on every push to `master`, including
+The **ci** workflow runs on every push to `master`, including
 merged pull requests. It can also be started manually from the repository's
 [Actions tab](https://github.com/sergix44/raspiboard/actions/workflows/package-linux.yml)
 using **Run workflow**.
 
-The **tests** job runs the application's Rust unit tests first in the Debian 13
-build container:
+The **build-test-package** job builds both formats from one release executable
+using `--format all`. It runs the full release test suite once, including library,
+binary, integration, and documentation tests, plus formatting, Clippy, and the PHP
+packaging checks. Tests are headless; no GUI or audio server is started. Both
+packages must pass structural checks and Debian 13 / Ubuntu 26.04 compatibility
+checks before either is uploaded. The compiler and native dependencies come from
+the pinned Debian 13 tooling container.
 
-```sh
-cargo test --release --locked --target x86_64-unknown-linux-gnu --lib --bins
-```
+Docker Buildx restores and saves the tooling container's layers through the
+GitHub Actions cache, then loads the image for the packaging command's `--image`
+option. A separate Cargo cache retains source downloads and compiled outputs.
+Its key includes runner architecture, tooling inputs, Cargo inputs, and the
+commit; restore prefixes reuse compatible earlier builds when source or
+dependencies change. Cargo still checks fingerprints before reusing outputs.
+Release optimizations and the two-job compilation limit apply to every build.
 
-This runs the Rust unit tests in the application library and binary, including
-the audio, storage, hotkey, and UI logic tests. Output appears directly in the
-job log; no GUI or audio server is started. Both package jobs depend on this
-job and are skipped if it fails.
+Open a successful run to download the `.deb`, AppImage, and shared `SHA256SUMS`
+file directly, without ZIP wrappers. Put all three in the same directory and run
+`sha256sum --check SHA256SUMS`. Run `chmod +x` on the AppImage before launching it.
 
-After those checks pass, the independent **deb** and **appimage** jobs build
-their respective packages in parallel.
-Each calls the PHP packaging command with Docker and its selected `--format` on
-an x86-64 Ubuntu runner. Each job compiles and checks the application independently;
-failure in one does not cancel the other. The compiler and native dependencies
-come from the pinned Debian 13 build container. Rust tests, formatting, Clippy,
-and the selected format's checks on Debian 13 and Ubuntu 26.04 must pass before
-that job uploads its package.
-
-Open the run to download each successful job's package directly, without a ZIP
-wrapper. Each job also uploads its own checksum file: `SHA256SUMS-deb` or
-`SHA256SUMS-appimage`. Download the matching checksum file alongside the package,
-then run `sha256sum --check SHA256SUMS-deb` or
-`sha256sum --check SHA256SUMS-appimage`. Run `chmod +x` on the AppImage before
-launching it.
-
-Packages are retained for 14 days. Each job's build logs are uploaded separately
-for 7 days, including failed builds. Cargo source downloads are cached between runs;
-compilation outputs are rebuilt. These workflow downloads are not GitHub Releases.
+Packages are retained for 14 days. Build logs are uploaded separately for 7 days,
+including failed builds. The first run after a cache reset rebuilds the tooling
+and dependencies; later runs can reuse them. These workflow downloads are not
+GitHub Releases.
 
 ## Local build options
 
@@ -63,6 +56,7 @@ The default is two compilation jobs. Docker and job-count overrides are availabl
 ./scripts/package-linux --engine docker --jobs 4
 ./scripts/package-linux --format deb
 ./scripts/package-linux --format appimage
+./scripts/package-linux --engine docker --image localhost/raspiboard-packaging:debian13
 ./scripts/package-linux --plain
 ./scripts/package-linux --json
 ```
@@ -70,6 +64,12 @@ The default is two compilation jobs. Docker and job-count overrides are availabl
 The default `--format all` builds both formats from the same executable. Selecting
 `deb` or `appimage` builds and validates only that format. `target/packages/`
 then contains the selected package and a `SHA256SUMS` file for that build.
+
+`--image NAME` uses an already-built tooling image and skips building
+`packaging/linux/Containerfile`; the image must contain the tools and native
+dependencies defined there. Formatting, tests, Clippy, package generation, and
+both compatibility checks still run. Without this option, the command builds
+the tooling image normally using the selected container engine's local cache.
 
 If your `docker` command is Podman's compatibility wrapper, use the default
 Podman engine so the command applies rootless user-ID mapping correctly.
@@ -81,7 +81,8 @@ in the log. A nonzero exit status means the build or a required check failed.
 
 The command performs these steps:
 
-1. Build a Debian 13 tooling container with pinned Rust and packaging tools.
+1. Build a Debian 13 tooling container with pinned Rust and packaging tools, or
+   use the supplied `--image`.
 2. Snapshot the application sources, excluding host build outputs and credentials.
 3. Run formatting, release compilation, the Rust tests, and Clippy.
 4. Generate icons and notices, preserve debug symbols, and package the executable

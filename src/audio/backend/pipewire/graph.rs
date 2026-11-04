@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 pub use crate::APP_ID;
 use crate::audio::{Target, TargetId};
 pub const LOCAL_LINK_GROUP: &str = "io.raspiboard.Raspiboard.local";
+const STREAM_TITLE_KEYS: [&str; 2] = ["media.title", "media.name"];
 
 pub type Properties = BTreeMap<String, String>;
 
@@ -138,13 +139,20 @@ impl Graph {
     }
 
     pub fn update(&mut self, id: u32, props: Properties) {
-        if let Some((_, current)) = self.objects.get_mut(&id) {
+        if let Some((kind, current)) = self.objects.get_mut(&id) {
+            if *kind == Kind::Node {
+                // Node info replaces title metadata; omitted keys must not stay cached.
+                for key in STREAM_TITLE_KEYS {
+                    current.remove(key);
+                }
+            }
             current.extend(props);
         }
     }
 
     pub fn targets(&self) -> Vec<Target> {
-        self.objects
+        let targets = self
+            .objects
             .iter()
             .filter_map(|(&id, (kind, props))| {
                 if *kind != Kind::Node
@@ -172,17 +180,22 @@ impl Graph {
                     .get("media.name")
                     .map(|s| format!(" — {s}"))
                     .unwrap_or_default();
-                Some(Target {
-                    id: identity(id, props.get("object.serial")?.parse().ok()?),
-                    display_label: compact_label(name, id),
-                    label: format!("{name}{description} [{id}] — {source}"),
-                })
+                Some((
+                    Target {
+                        id: identity(id, props.get("object.serial")?.parse().ok()?),
+                        display_label: compact_label(name, id, stream_title(props)),
+                        label: format!("{name}{description} [{id}] — {source}"),
+                    },
+                    compact_label(name, id, None),
+                ))
             })
-            .collect()
+            .collect();
+        unique_display_labels(targets)
     }
 
     pub fn sources(&self) -> Vec<Target> {
-        self.objects
+        let sources = self
+            .objects
             .iter()
             .filter_map(|(&id, (kind, props))| {
                 if *kind != Kind::Node
@@ -197,13 +210,17 @@ impl Graph {
                     .find_map(|key| props.get(*key))
                     .map(String::as_str)
                     .unwrap_or("Unnamed application");
-                Some(Target {
-                    id: identity(id, props.get("object.serial")?.parse().ok()?),
-                    display_label: compact_label(name, id),
-                    label: format!("{name} [{}] — {}", id, value(props, "media.name")),
-                })
+                Some((
+                    Target {
+                        id: identity(id, props.get("object.serial")?.parse().ok()?),
+                        display_label: compact_label(name, id, stream_title(props)),
+                        label: format!("{name} [{}] — {}", id, value(props, "media.name")),
+                    },
+                    compact_label(name, id, None),
+                ))
             })
-            .collect()
+            .collect();
+        unique_display_labels(sources)
     }
 
     fn source_kind(&self, target: u32) -> (bool, bool) {
@@ -347,12 +364,41 @@ mod tests;
 fn identity(id: u32, serial: u64) -> TargetId {
     format!("pipewire:{id}:{serial}").into()
 }
-fn compact_label(name: &str, id: u32) -> String {
+
+fn stream_title(props: &Properties) -> Option<&str> {
+    STREAM_TITLE_KEYS.into_iter().find_map(|key| {
+        props
+            .get(key)
+            .map(|title| title.trim())
+            .filter(|title| !title.is_empty())
+    })
+}
+
+fn compact_label(name: &str, id: u32, title: Option<&str>) -> String {
     let name = name.split(" — ").next().unwrap_or(name);
     let suffix = format!("[{id}]");
-    if name.ends_with(&suffix) {
-        name.into()
-    } else {
-        format!("{name} {suffix}")
+    let name = name.strip_suffix(&suffix).unwrap_or(name).trim_end();
+    let detail = title.map_or_else(|| id.to_string(), str::to_owned);
+    format!("{name} [{detail}]")
+}
+
+fn unique_display_labels(mut targets: Vec<(Target, String)>) -> Vec<Target> {
+    // Falling back to an ID can collide with another stream's numeric title.
+    loop {
+        let mut counts = BTreeMap::<String, usize>::new();
+        for (target, _) in &targets {
+            *counts.entry(target.display_label.clone()).or_default() += 1;
+        }
+        let mut changed = false;
+        for (target, fallback) in &mut targets {
+            if counts[&target.display_label] > 1 && target.display_label != *fallback {
+                target.display_label.clone_from(fallback);
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
     }
+    targets.into_iter().map(|(target, _)| target).collect()
 }

@@ -15,6 +15,7 @@ $root = dirname(__DIR__);
 $engine = 'podman';
 $jobs = '2';
 $format = 'all';
+$image = null;
 $stage = 'arguments';
 $log = null;
 
@@ -40,9 +41,16 @@ try {
             case '--json':
             case '--plain':
                 break;
+            case '--image':
+                $image = $argv[++$index] ?? '';
+                if (trim($image) === '' || str_starts_with($image, '-')) {
+                    throw new InvalidArgumentException('--image requires an image name', 2);
+                }
+                break;
             case '--help':
-                echo "Usage: ./scripts/package-linux [--format all|deb|appimage] [--engine podman|docker] [--jobs N] [--plain|--json]\n";
+                echo "Usage: ./scripts/package-linux [--format all|deb|appimage] [--engine podman|docker] [--jobs N] [--image NAME] [--plain|--json]\n";
                 echo "Builds and checks Debian 13 / Ubuntu 26.04 x86-64 packages. Requires PHP 8.2+ and a working container engine.\n";
+                echo "--image uses a prebuilt tooling image instead of building packaging/linux/Containerfile.\n";
                 exit(0);
             default:
                 throw new InvalidArgumentException('Unknown option: '.$argv[$index], 2);
@@ -69,10 +77,14 @@ try {
             echo '['.date('Y-m-d H:i:s').'.000] packaging.INFO: '.$message."\n";
         }
     };
-    $image = 'localhost/raspiboard-packaging:debian13';
-    $stage = 'container build';
-    $announce('Building Debian 13 tooling; log: '.$log);
-    process([$engine, 'build', '--tag', $image, '--file', $root.'/packaging/linux/Containerfile', $root.'/packaging/linux'], log: $log);
+    if ($image === null) {
+        $image = 'localhost/raspiboard-packaging:debian13';
+        $stage = 'container build';
+        $announce('Building Debian 13 tooling; log: '.$log);
+        process([$engine, 'build', '--tag', $image, '--file', $root.'/packaging/linux/Containerfile', $root.'/packaging/linux'], log: $log);
+    } else {
+        $announce('Using tooling image '.$image.'; log: '.$log);
+    }
 
     $stage = 'source snapshot';
     directory($run.'/source');

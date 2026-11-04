@@ -274,18 +274,27 @@ fn resizing_sound_buttons_clamps_limits_and_preserves_playback() {
 }
 
 #[test]
-fn application_choices_hide_descriptions_and_sources_but_keep_stream_ids() {
+fn application_choices_show_selector_labels_without_diagnostic_details() {
     for label in [
         "Recorder [20] — microphone",
         "Recorder — Capture audio [20] — source unknown",
         "Recorder",
     ] {
-        let choice = TargetChoice(Some(Target {
-            id: "pipewire:20:200".into(),
-            display_label: "Recorder [20]".into(),
-            label: label.into(),
-        }));
-        assert_eq!(choice.to_string(), "Recorder [20]");
+        for display_label in ["Recorder [Voice call]", "Recorder [20]"] {
+            let target = Target {
+                id: "pipewire:20:200".into(),
+                display_label: display_label.into(),
+                label: label.into(),
+            };
+            assert_eq!(
+                TargetChoice(Some(target.clone())).to_string(),
+                display_label
+            );
+            assert_eq!(
+                passthrough::SourceChoice(Some(target)).to_string(),
+                display_label
+            );
+        }
     }
     assert_eq!(TargetChoice(None).to_string(), "No Output");
 }

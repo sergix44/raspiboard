@@ -42,7 +42,7 @@ impl ksni::Tray for Tray {
     fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
         vec![
             ksni::menu::StandardItem {
-                label: "Show Raspiboard".into(),
+                label: "Show".into(),
                 activate: Box::new(|tray: &mut Self| tray.send(Event::Show)),
                 ..Default::default()
             }

@@ -35,6 +35,15 @@ $tests = [
         [$status, $output] = command([PHP_BINARY, $root.'/scripts/package-linux', '--format', 'rpm']);
         check($status === 2 && str_contains($output, 'all, deb or appimage'), $output);
     },
+    'missing tooling image is rejected' => function () use ($root): void {
+        [$status, $output] = command([PHP_BINARY, $root.'/scripts/package-linux', '--image']);
+        check($status === 2 && str_contains($output, 'image name'), $output);
+    },
+    'tooling image cannot consume another option' => function () use ($root): void {
+        [$status, $output] = command([PHP_BINARY, $root.'/scripts/package-linux', '--image', '--json']);
+        $result = json_decode($output, true, flags: JSON_THROW_ON_ERROR);
+        check($status === 2 && $result['stage'] === 'arguments' && str_contains($result['message'], 'image name'), $output);
+    },
     'failed build preserves downloads in a checkout with spaces' => function () use ($root, $workspace): void {
         $checkout = $workspace.'/checkout with spaces';
         mkdir($checkout.'/scripts', 0755, true);
@@ -102,9 +111,19 @@ foreach (['mismatch', 'traversal'] as $kind) {
     };
 }
 
-foreach ([[false, 'all'], [true, 'all'], [false, 'deb'], [false, 'appimage'], [true, 'deb']] as [$failBaseline, $format]) {
-    $tests[($failBaseline ? 'baseline failure preserves downloads: ' : 'successful build publishes selected format: ').$format] = function () use ($root, $workspace, $failBaseline, $format): void {
-        $checkout = $workspace.'/completed checkout '.(int) $failBaseline.' '.$format;
+foreach ([
+    [false, 'all', 'podman', null],
+    [true, 'all', 'podman', null],
+    [false, 'deb', 'podman', null],
+    [false, 'appimage', 'podman', null],
+    [true, 'deb', 'podman', null],
+    [false, 'all', 'docker', 'example/tooling:cached'],
+    [false, 'all', 'podman', 'example/tooling:cached'],
+    [true, 'all', 'docker', 'example/tooling:cached'],
+] as [$failBaseline, $format, $engine, $image]) {
+    $label = $format.' '.$engine.($image === null ? '' : ' prebuilt');
+    $tests[($failBaseline ? 'baseline failure preserves downloads: ' : 'successful build publishes selected format: ').$label] = function () use ($root, $workspace, $failBaseline, $format, $engine, $image, $label): void {
+        $checkout = $workspace.'/completed checkout '.(int) $failBaseline.' '.$label;
         mkdir($checkout.'/scripts', 0755, true);
         mkdir($checkout.'/packaging/linux', 0755, true);
         copy($root.'/scripts/package-linux', $checkout.'/scripts/package-linux');
@@ -120,9 +139,10 @@ foreach ([[false, 'all'], [true, 'all'], [false, 'deb'], [false, 'appimage'], [t
         symlink('previous', $checkout.'/target/packages');
         $bin = $checkout.'/fake engine';
         mkdir($bin);
-        file_put_contents($bin.'/podman', <<<'PHP'
+        file_put_contents($bin.'/'.$engine, <<<'PHP'
 #!/usr/bin/env php
 <?php
+file_put_contents(getenv('PACKAGING_TEST_ENGINE_LOG'), json_encode(array_slice($argv, 1), JSON_THROW_ON_ERROR)."\n", FILE_APPEND);
 echo "container diagnostics\n";
 if (in_array('/source/packaging/linux/build.php', $argv, true)) {
     foreach ($argv as $index => $argument) {
@@ -150,12 +170,26 @@ if (in_array('/source/packaging/linux/build.php', $argv, true)) {
 }
 PHP
         );
-        chmod($bin.'/podman', 0755);
+        chmod($bin.'/'.$engine, 0755);
+        $arguments = [PHP_BINARY, $checkout.'/scripts/package-linux', '--json', '--format', $format, '--engine', $engine];
+        if ($image !== null) {
+            array_push($arguments, '--image', $image);
+        }
+        $engineLog = $checkout.'/engine.jsonl';
         [$status, $output] = command(
-            [PHP_BINARY, $checkout.'/scripts/package-linux', '--json', '--format', $format],
-            [...getenv(), 'PATH' => $bin.':'.getenv('PATH'), 'PACKAGING_TEST_FAIL_BASELINE' => $failBaseline ? '1' : ''],
+            $arguments,
+            [...getenv(), 'PATH' => $bin.':'.getenv('PATH'), 'PACKAGING_TEST_FAIL_BASELINE' => $failBaseline ? '1' : '', 'PACKAGING_TEST_ENGINE_LOG' => $engineLog],
         );
         $result = json_decode($output, true, flags: JSON_THROW_ON_ERROR);
+        check(is_file($engineLog), $output);
+        $calls = array_map(static fn ($line) => json_decode($line, true, flags: JSON_THROW_ON_ERROR), file($engineLog, FILE_IGNORE_NEW_LINES));
+        $builds = array_filter($calls, static fn ($args) => $args[0] === 'build');
+        check(count($builds) === ($image === null ? 1 : 0), 'Tooling image was built unexpectedly or not built');
+        $packageCalls = array_values(array_filter($calls, static fn ($args) => in_array('/source/packaging/linux/build.php', $args, true)));
+        check(count($packageCalls) === 1, 'Application must be built once');
+        check(in_array($image ?? 'localhost/raspiboard-packaging:debian13', $packageCalls[0], true), 'Incorrect tooling image');
+        $baselines = array_filter($calls, static fn ($args) => in_array('docker.io/library/debian:13-slim', $args, true) || in_array('docker.io/library/ubuntu:26.04', $args, true));
+        check(count($baselines) === 2, 'Both compatibility baselines must be checked');
         if ($failBaseline) {
             check($status === 74 && $result['status'] === 'error', $output);
             check(file_get_contents($checkout.'/target/packages/SHA256SUMS') === "previous\n", 'Failed baseline replaced good downloads');

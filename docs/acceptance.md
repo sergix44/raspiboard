@@ -9,6 +9,15 @@ cargo run --locked
 
 ## Linux packages
 
+For GitHub Actions, open a successful **ci** run and expect one
+**build-test-package** job, separate `.deb` and AppImage downloads, and one
+`SHA256SUMS` file covering both. Download all three and run
+`sha256sum --check SHA256SUMS`; both files must report `OK`. On a subsequent
+source-only change, expect Cargo cache restoration and cached Docker tooling
+layers, with tests and both compatibility checks still running. Build logs must
+be available even after a packaging failure. Compare job durations after the
+first successful run has populated the caches.
+
 Run these checks on Debian 13 and Ubuntu 26.04 x86-64 desktop sessions, with
 PipeWire, a session manager, and the desktop's portal backend running. Exercise
 Wayland and X11 where available. Build and check packages as described in
@@ -435,8 +444,8 @@ Wayland and X11 where available. Build and check packages as described in
    If none are available at launch, the dropdown shows None and selects the first
    application when one appears. No audio starts automatically. The dropdown has
    a None entry above the applications and no separate clear button. If several
-   streams appear, their IDs distinguish the entries; choose the one used by the
-   call or recording.
+   streams appear, their titles in brackets distinguish the entries; choose the
+   one used by the call or recording. Missing or duplicate titles show numeric IDs.
    Start another recording application, then end its stream: the dropdown updates
    automatically without reopening the app or clicking a refresh control.
 3. With volumes unlinked, set Remote Volume to 25% and Local Volume to 0%.
@@ -838,12 +847,27 @@ Run `cargo run --locked` with two long sounds and one shorter sound assigned.
 
 ## Platform separation regression
 
-Run `cargo run --locked` on Linux. Confirm application names and stream IDs still
-appear as before; local-only playback, previews, overlapping clips, pause/resume,
+Run `cargo run --locked` on Linux. Confirm application names and stream titles
+appear in both selectors, with numeric IDs for missing or duplicate titles;
+local-only playback, previews, overlapping clips, pause/resume,
 stop and linked/unlinked volumes retain their behavior. Close and reopen a target
 recording stream: the stale selection must not route to a reused node. Configure,
 activate and cancel a global shortcut and verify retry behavior. This refactor
 adds no Windows runtime support or settings migration.
+
+## Application selector titles
+
+1. Run `cargo run --locked`, start application audio for the input selector, and
+   open a microphone stream in a receiving application for the output selector.
+   When the application supplies a media title or stream name, expect labels such
+   as `Firefox [Video title]`. Expect a numeric ID when neither is available.
+2. Open multiple streams in one application. Distinct titles should remain
+   readable; identical labels should fall back to distinct numeric IDs. A title
+   shared by different applications or by opposite selectors should remain visible.
+3. While sharing or playing audio, change a title in an application that updates
+   its stream metadata. Expect the selected label to update without stopping audio,
+   changing the selected stream, or toggling passthrough off. When a stream with a
+   duplicate title closes, the remaining stream should show its title again.
 
 ## System tray and close behavior
 

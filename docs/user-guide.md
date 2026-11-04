@@ -86,6 +86,13 @@ joining a call or starting a recording. Select it to mix clips alongside its
 existing microphone input. No virtual microphone selection is needed in the
 receiving application.
 
+Both application selectors show the stream title in brackets when the application
+provides one, for example `Firefox [Video title]`. Raspiboard prefers the media
+title, then the stream name. These names come from the application and may differ
+from its desktop window title. Missing or duplicate titles use numeric stream IDs
+so entries remain distinguishable. Titles update automatically without changing
+the selected stream or interrupting playback or passthrough.
+
 Choose **No Output** for local playback only. **Local Volume** controls your
 speakers or headphones; **Remote Volume** controls the selected application's
 feed. The chain icon links or unlinks the sliders. Linking copies Remote Volume
@@ -103,8 +110,9 @@ with the selected recording application:
 
 1. Start audio in the source application so it opens a playback stream.
 2. Choose it in the upper **No Input** dropdown, then choose the receiving
-   application in the lower output dropdown. Stream IDs distinguish multiple
-   streams from one application, including separate browser streams.
+   application in the lower output dropdown. Stream titles distinguish multiple
+   streams from one application, including separate browser streams; numeric IDs
+   appear when titles are unavailable or ambiguous.
 3. Click the green **Cable** button. Once connected, it blinks with a one-second
    on/off rhythm and a brief filament fade. The routing arrow on its left stays
    green. Click again to stop sharing.

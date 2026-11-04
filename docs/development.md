@@ -138,10 +138,12 @@ dependency. Building it requires CMake and the C toolchain listed above.
 
 ## Checks
 
-The GitHub workflow runs the application unit tests with `cargo test --release
---locked --target x86_64-unknown-linux-gnu --lib --bins` before starting either
-package job. Those jobs also run the full application test suite, formatting,
-Clippy, and PHP packaging checks.
+The GitHub workflow uses one build/test/package job. The packaging command runs
+the full application test suite with `cargo test --release --locked --target
+x86_64-unknown-linux-gnu`, formatting, Clippy, and PHP packaging checks once,
+then generates both formats from the same release executable. Debian 13 and
+Ubuntu 26.04 package validation must pass before upload. Cargo downloads and
+compiled outputs, plus Docker tooling layers, are cached between runs.
 
 ```sh
 cargo fmt --check
@@ -193,11 +195,15 @@ Hotkey tests cover session membership, held-key suppression, assignment and Clea
 stale callbacks, deletion, cancellation, errors, and restoring saved shortcuts.
 
 Follow the [manual acceptance checks](acceptance.md) to verify live routing.
-Applications may publish several recording streams; the destination list includes
-stream IDs to distinguish them. Streams whose upstream source cannot be identified
-remain selectable; the dropdown omits source descriptions. Known desktop-audio-only captures
-are excluded. The receiving application's mute, push-to-talk, and noise suppression
-settings still apply.
+Applications may publish several recording streams. Both selectors prefer
+`media.title`, then `media.name`, trimmed and shown in brackets after the
+application name. Missing or duplicate labels fall back to stream IDs within each
+selector. Labels refresh with discovery metadata; routing retains the node/serial
+identity. Headless graph tests cover both selectors, title preference, blank
+metadata, duplicate and numeric-title collisions, and title updates. Streams whose
+upstream source cannot be identified remain selectable; the dropdown omits source
+descriptions. Known desktop-audio-only captures are excluded. The receiving
+application's mute, push-to-talk, and noise suppression settings still apply.
 
 ## Code walkthroughs
 

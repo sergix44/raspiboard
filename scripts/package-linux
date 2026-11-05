@@ -15,6 +15,7 @@ $root = dirname(__DIR__);
 $engine = 'podman';
 $jobs = '2';
 $format = 'all';
+$buildStage = 'all';
 $image = null;
 $stage = 'arguments';
 $log = null;
@@ -22,6 +23,12 @@ $log = null;
 try {
     for ($index = 1; $index < $argc; $index++) {
         switch ($argv[$index]) {
+            case '--stage':
+                $buildStage = $argv[++$index] ?? '';
+                if (!in_array($buildStage, ['all', 'build', 'test', 'package'], true)) {
+                    throw new InvalidArgumentException('--stage must be all, build, test or package', 2);
+                }
+                break;
             case '--format':
                 $format = $argv[++$index] ?? '';
                 packagePatterns($format);
@@ -48,9 +55,10 @@ try {
                 }
                 break;
             case '--help':
-                echo "Usage: ./scripts/package-linux [--format all|deb|appimage] [--engine podman|docker] [--jobs N] [--image NAME] [--plain|--json]\n";
+                echo "Usage: ./scripts/package-linux [--stage all|build|test|package] [--format all|deb|appimage] [--engine podman|docker] [--jobs N] [--image NAME] [--plain|--json]\n";
                 echo "Builds and checks Debian 13 / Ubuntu 26.04 x86-64 packages. Requires PHP 8.2+ and a working container engine.\n";
                 echo "--image uses a prebuilt tooling image instead of building packaging/linux/Containerfile.\n";
+                echo "--stage splits a build across jobs; build creates target/packaging/staged, test and package reuse it.\n";
                 exit(0);
             default:
                 throw new InvalidArgumentException('Unknown option: '.$argv[$index], 2);
@@ -64,13 +72,27 @@ try {
     if (file_exists($downloads) && !is_link($downloads)) {
         throw new RuntimeException('target/packages must be absent or a symlink; move the existing directory before packaging', 2);
     }
-    $run = $target.'/packaging/runs/'.gmdate('Ymd-His').'-'.bin2hex(random_bytes(4));
-    directory($run.'/artifacts');
+    $staged = $target.'/packaging/staged';
+    $run = in_array($buildStage, ['all', 'package'], true)
+        ? $target.'/packaging/runs/'.gmdate('Ymd-His').'-'.bin2hex(random_bytes(4))
+        : $staged;
+    $compiles = in_array($buildStage, ['all', 'build'], true);
+    if (!$compiles && !is_file($staged.'/build-info.json')) {
+        throw new RuntimeException('Run --stage build before resuming tests or packaging', 2);
+    }
+    if ($buildStage === 'build' && file_exists($run)) {
+        throw new RuntimeException('target/packaging/staged already exists; use a clean checkout for --stage build', 2);
+    }
     directory($target.'/packaging/cache');
     $cacheLock = fopen($target.'/packaging/cache.lock', 'c');
     if ($cacheLock === false || !flock($cacheLock, LOCK_EX | LOCK_NB)) {
         throw new RuntimeException('Another packaging build is using this checkout; wait for it to finish', 2);
     }
+    if ($buildStage === 'package') {
+        directory(dirname($run));
+        process(['cp', '--archive', '--reflink=auto', $staged, $run]);
+    }
+    directory($run.'/artifacts');
     $log = $run.'/build.log';
     $announce = static function (string $message) use ($json): void {
         if (!$json) {
@@ -87,14 +109,16 @@ try {
     }
 
     $stage = 'source snapshot';
-    directory($run.'/source');
-    foreach (['Cargo.toml', 'Cargo.lock', 'LICENSE', 'README.md', 'src', 'assets', 'img', 'vendor', 'tests', 'packaging', 'scripts'] as $name) {
-        copyTree($root.'/'.$name, $run.'/source/'.$name);
+    if ($compiles) {
+        directory($run.'/source');
+        foreach (['Cargo.toml', 'Cargo.lock', 'LICENSE', 'README.md', 'src', 'assets', 'img', 'vendor', 'tests', 'packaging', 'scripts'] as $name) {
+            copyTree($root.'/'.$name, $run.'/source/'.$name);
+        }
     }
     $uid = trim(process(['id', '-u'], capture: true));
     $gid = trim(process(['id', '-g'], capture: true));
     $stage = 'package build';
-    $announce('Compiling and packaging; logs and debug files: '.$run);
+    $announce('Running '.$buildStage.' stage; logs and debug files: '.$run);
     $arguments = [$engine, 'run', '--rm'];
     if ($engine === 'podman') {
         array_push($arguments, '--userns', 'keep-id');
@@ -104,32 +128,38 @@ try {
         '--volume', $target.'/packaging/cache:/cache',
         '--env', 'CARGO_HOME=/cache/cargo', '--env', 'CARGO_TARGET_DIR=/cache/target',
         '--env', 'CARGO_BUILD_JOBS='.$jobs,
+        '--env', 'RUST_TEST_THREADS='.$jobs,
+        '--env', 'RAYON_NUM_THREADS='.$jobs,
+        '--env', 'RASPIBOARD_BUILD_STAGE='.$buildStage,
         '--env', 'RASPIBOARD_PACKAGE_FORMAT='.$format,
         $image, 'php', '/source/packaging/linux/build.php');
     process($arguments, log: $log);
 
-    foreach (['docker.io/library/debian:13-slim', 'docker.io/library/ubuntu:26.04'] as $baseline) {
-        $stage = 'baseline check '.$baseline;
-        $announce('Checking install, removal, and portable libraries on '.$baseline);
-        process([$engine, 'run', '--rm', '--volume', $run.':/output:ro',
-            $baseline, 'sh', '-c',
-            'apt-get update && apt-get install -y --no-install-recommends php-cli ca-certificates binutils && php /output/source/packaging/linux/check.php /output/artifacts'], log: $log);
-    }
-    $stage = 'publish local downloads';
-    foreach ([...packagePatterns($format), 'SHA256SUMS'] as $pattern) {
-        if (count(glob($run.'/artifacts/'.$pattern)) !== 1) {
-            throw new RuntimeException('Expected exactly one '.$pattern.' in the verified output');
+    if (in_array($buildStage, ['all', 'package'], true)) {
+        foreach (['docker.io/library/debian:13-slim', 'docker.io/library/ubuntu:26.04'] as $baseline) {
+            $stage = 'baseline check '.$baseline;
+            $announce('Checking install, removal, and portable libraries on '.$baseline);
+            process([$engine, 'run', '--rm', '--volume', $run.':/output:ro',
+                $baseline, 'sh', '-c',
+                'apt-get update && apt-get install -y --no-install-recommends php-cli ca-certificates binutils && php /output/source/packaging/linux/check.php /output/artifacts'], log: $log);
+        }
+        $stage = 'publish local downloads';
+        foreach ([...packagePatterns($format), 'SHA256SUMS'] as $pattern) {
+            if (count(glob($run.'/artifacts/'.$pattern)) !== 1) {
+                throw new RuntimeException('Expected exactly one '.$pattern.' in the verified output');
+            }
+        }
+        $link = $target.'/.packages-'.bin2hex(random_bytes(4));
+        if (!symlink(substr($run.'/artifacts', strlen($target) + 1), $link) || !rename($link, $downloads)) {
+            throw new RuntimeException('Could not update target/packages');
         }
     }
-    $link = $target.'/.packages-'.bin2hex(random_bytes(4));
-    if (!symlink(substr($run.'/artifacts', strlen($target) + 1), $link) || !rename($link, $downloads)) {
-        throw new RuntimeException('Could not update target/packages');
-    }
-    $result = ['status' => 'ok', 'directory' => $downloads, 'log' => $log, 'files' => array_map('basename', glob($downloads.'/*'))];
+    $output = in_array($buildStage, ['all', 'package'], true) ? $downloads : $run;
+    $result = ['status' => 'ok', 'directory' => $output, 'log' => $log, 'files' => array_map('basename', glob($output.'/*'))];
     if ($json) {
         echo json_encode($result, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n";
     } else {
-        $announce('Packages ready: '.$downloads);
+        $announce(($compiles && $buildStage === 'build' ? 'Build ready: ' : ($buildStage === 'test' ? 'Tests passed: ' : 'Packages ready: ')).$output);
         foreach ($result['files'] as $file) {
             echo '  '.$file."\n";
         }

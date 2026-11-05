@@ -1,0 +1,20 @@
+name: Linux packaging tooling
+description: Load the Debian 13 tooling image from shared Docker build layers.
+inputs:
+  save-cache:
+    description: Save tooling layers after the build job.
+    default: 'false'
+runs:
+  using: composite
+  steps:
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+    - name: Load cached tooling image
+      uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+      with:
+        context: packaging/linux
+        file: packaging/linux/Containerfile
+        tags: localhost/raspiboard-packaging:debian13
+        load: true
+        cache-from: type=gha,scope=linux-packaging-tooling
+        cache-to: ${{ inputs.save-cache == 'true' && 'type=gha,scope=linux-packaging-tooling,mode=max' || '' }}

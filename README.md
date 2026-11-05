@@ -53,8 +53,10 @@ with no virtual microphone to select in that application.
 **Supported packages:** x86-64 Linux, Debian 13+ and Ubuntu 26.04+.
 Choose a `.deb` for an installed application or an AppImage for a portable one.
 
-Find automatically built packages in the artifacts of a successful
-[packaging workflow run](https://github.com/sergix44/raspiboard/actions/workflows/package-linux.yml).
+Find published packages on the
+[Releases page](https://github.com/sergix44/raspiboard/releases).
+For the latest development build, use the artifacts of a successful
+[packaging workflow run](https://github.com/sergix44/raspiboard/actions/workflows/build.yml).
 Download the `.deb` or AppImage directly, plus its matching checksum file.
 
 ### Install the `.deb`

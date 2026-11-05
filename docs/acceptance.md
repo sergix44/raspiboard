@@ -9,14 +9,35 @@ cargo run --locked
 
 ## Linux packages
 
-For GitHub Actions, open a successful **ci** run and expect one
-**build-test-package** job, separate `.deb` and AppImage downloads, and one
+For GitHub Actions, open a successful **ci** run and expect **build →
+app-unit-tests → packaging → update-draft-release**, separate `.deb` and AppImage downloads, and one
 `SHA256SUMS` file covering both. Download all three and run
 `sha256sum --check SHA256SUMS`; both files must report `OK`. On a subsequent
 source-only change, expect Cargo cache restoration and cached Docker tooling
 layers, with tests and both compatibility checks still running. Build logs must
 be available even after a packaging failure. Compare job durations after the
-first successful run has populated the caches.
+first successful run has populated the caches. Build/test/package commands must
+pass `--jobs` matching that runner's `nproc`. Expect `linux-build.tar.zst` and
+`linux-test-cache.tar.zst` as intermediate artifacts. The test job must restore
+both and execute already compiled tests; its Cargo log should report no
+`Compiling` lines. The packaging job must restore only the shared build and must
+not run `cargo build` or `cargo test`. A failing application test must skip
+packaging and release updates. After the one-day intermediate retention expires,
+start a fresh full workflow rather than rerunning a downstream job.
+
+After a successful `master` run, open **Releases** with repository push access.
+Expect a draft tagged `v` plus the version in `Cargo.toml`, containing the same
+`.deb`, AppImage, and `SHA256SUMS` as the workflow artifacts. Download all three
+and check their checksums. After another successful build of that version,
+expect the same draft with refreshed assets and its target set to the new built
+commit; edits to its title and notes must remain. A failed packaging run must
+not reach the draft update. A manually dispatched build on another branch must
+not change any release.
+
+When ready to release, click **Publish release** on the draft. Expect the tag to
+point to the commit built by the last successful draft update and the assets to
+be publicly downloadable without another build. Later builds of the published
+version must skip release changes. A version bump must create a new draft.
 
 Run these checks on Debian 13 and Ubuntu 26.04 x86-64 desktop sessions, with
 PipeWire, a session manager, and the desktop's portal backend running. Exercise

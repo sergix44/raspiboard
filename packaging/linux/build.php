@@ -14,52 +14,49 @@ use const Raspiboard\Packaging\HOST_GRAPHICS_LIBRARIES;
 
 $format = getenv('RASPIBOARD_PACKAGE_FORMAT') ?: 'all';
 packagePatterns($format);
+$stage = getenv('RASPIBOARD_BUILD_STAGE') ?: 'all';
+if (!in_array($stage, ['all', 'build', 'test', 'package'], true)) {
+    throw new InvalidArgumentException('Unknown build stage: '.$stage);
+}
 $work = '/output/work';
-copyTree('/source', $work);
+if (in_array($stage, ['all', 'build'], true)) {
+    copyTree('/source', $work);
+}
 chdir($work);
 putenv('RUSTFLAGS=--remap-path-prefix=/output/work=raspiboard --remap-path-prefix=/cache/cargo=rust-dependencies');
 $target = 'x86_64-unknown-linux-gnu';
 $metadata = json_decode(process(['cargo', 'metadata', '--no-deps', '--locked', '--format-version', '1'], capture: true), true, flags: JSON_THROW_ON_ERROR);
-$package = $metadata['packages'][0];
-$version = $package['version'];
-file_put_contents('/output/build-info.json', json_encode(['version' => $version, 'format' => $format], JSON_THROW_ON_ERROR)."\n");
+$version = $metadata['packages'][0]['version'];
 $assets = $work.'/target/package-assets';
 $artifacts = '/output/artifacts';
 $appdir = '/output/AppDir';
-directory($assets.'/notices');
-directory('/output/debug');
-copy('/usr/bin/pw-config', '/output/debug/pw-config');
-chmod('/output/debug/pw-config', 0755);
+$packageTarget = $work.'/target/package-binary';
+$binary = $packageTarget.'/'.$target.'/release/raspiboard';
+$id = 'io.raspiboard.Raspiboard';
+if (in_array($stage, ['all', 'build'], true)) {
+    directory($assets.'/notices');
+    directory('/output/debug');
+    copy('/usr/bin/pw-config', '/output/debug/pw-config');
+    chmod('/output/debug/pw-config', 0755);
+    require __DIR__.'/compile.php';
+} else {
+    $build = json_decode(file_get_contents('/output/build-info.json'), true, flags: JSON_THROW_ON_ERROR);
+    if ($build['version'] !== $version || $build['format'] !== $format || !is_file($binary)) {
+        throw new RuntimeException('Staged build does not match the requested packages');
+    }
+}
+if (in_array($stage, ['all', 'test'], true)) {
+    process(['php', 'tests/packaging/run.php']);
+    process(['cargo', 'test', '--release', '--locked', '--offline', '--target', $target]);
+}
+if (in_array($stage, ['build', 'test'], true)) {
+    return;
+}
 directory($appdir.'/usr/bin');
 directory($appdir.'/usr/lib');
 
-process(['php', 'tests/packaging/run.php']);
-process(['cargo', 'fmt', '--check']);
-process(['cargo', 'build', '--release', '--locked', '--target', $target]);
-process(['cargo', 'test', '--release', '--locked', '--target', $target]);
-process(['cargo', 'clippy', '--release', '--locked', '--target', $target, '--all-targets', '--', '-D', 'warnings']);
-
-$compiled = getenv('CARGO_TARGET_DIR').'/'.$target.'/release/raspiboard';
-$packageTarget = $work.'/target/package-binary';
-$binary = $packageTarget.'/'.$target.'/release/raspiboard';
-directory(dirname($binary));
-copy($compiled, $binary);
-process(['objcopy', '--only-keep-debug', $binary, '/output/debug/raspiboard.debug']);
-process(['strip', '--strip-unneeded', $binary]);
-process(['objcopy', '--add-gnu-debuglink=/output/debug/raspiboard.debug', $binary]);
-
-$id = 'io.raspiboard.Raspiboard';
-foreach ([16, 32, 48, 64, 128, 256, 512] as $size) {
-    $directory = $assets.'/icons/'.$size.'x'.$size.'/apps';
-    directory($directory);
-    process(['magick', 'img/icon_full.png', '-resize', $size.'x'.$size, $directory.'/'.$id.'.png']);
-}
-writeNotices($assets.'/notices');
-$changelog = "raspiboard ($version-1) unstable; urgency=medium\n\n  * Package Raspiboard for Debian and Ubuntu desktops.\n\n -- Sergio Brighenti <sergio@brighenti.me>  ".date(DATE_RFC2822)."\n";
-file_put_contents($assets.'/notices/changelog.Debian.gz', gzencode($changelog, 9));
-process(['desktop-file-validate', 'assets/'.$id.'.desktop']);
 if ($format !== 'appimage') {
-    process(['cargo', 'deb', '--no-build', '--no-strip', '--target', $target, '--output', $artifacts.'/raspiboard_'.$version.'-1_amd64.deb'], environment: [...getenv(), 'CARGO_TARGET_DIR' => $packageTarget]);
+    process(['cargo', 'deb', '--locked', '--offline', '--no-build', '--no-strip', '--target', $target, '--output', $artifacts.'/raspiboard_'.$version.'-1_amd64.deb'], environment: [...getenv(), 'CARGO_TARGET_DIR' => $packageTarget]);
 }
 
 if ($format !== 'deb') {

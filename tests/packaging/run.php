@@ -23,6 +23,22 @@ function command(array $args, ?array $environment = null): array
 }
 
 $tests = [
+    'unsupported stages are rejected' => function () use ($root): void {
+        [$status, $output] = command([PHP_BINARY, $root.'/scripts/package-linux', '--stage', 'deploy']);
+        check($status === 2 && str_contains($output, 'all, build, test or package'), $output);
+    },
+    'resuming requires a successful staged build' => function () use ($root, $workspace): void {
+        $checkout = $workspace.'/missing staged build';
+        mkdir($checkout.'/scripts', 0755, true);
+        mkdir($checkout.'/packaging/linux', 0755, true);
+        copy($root.'/scripts/package-linux', $checkout.'/scripts/package-linux');
+        copy($root.'/packaging/linux/common.php', $checkout.'/packaging/linux/common.php');
+        foreach (['test', 'package'] as $stage) {
+            [$status, $output] = command([PHP_BINARY, $checkout.'/scripts/package-linux', '--stage', $stage, '--json']);
+            $result = json_decode($output, true, flags: JSON_THROW_ON_ERROR);
+            check($status === 2 && str_contains($result['message'], '--stage build'), $output);
+        }
+    },
     'invalid job counts fail before container invocation' => function () use ($root): void {
         [$status, $output] = command([PHP_BINARY, $root.'/scripts/package-linux', '--jobs', '0']);
         check($status === 2 && str_contains($output, 'positive'), $output);
@@ -203,6 +219,82 @@ PHP
         }
     };
 }
+
+$tests['stages reuse one source snapshot and preserve downloads until packaging'] = function () use ($root, $workspace): void {
+    $checkout = $workspace.'/staged checkout';
+    mkdir($checkout.'/scripts', 0755, true);
+    mkdir($checkout.'/packaging/linux', 0755, true);
+    copy($root.'/scripts/package-linux', $checkout.'/scripts/package-linux');
+    copy($root.'/packaging/linux/common.php', $checkout.'/packaging/linux/common.php');
+    foreach (['Cargo.toml', 'Cargo.lock', 'LICENSE', 'README.md'] as $name) {
+        copy($root.'/'.$name, $checkout.'/'.$name);
+    }
+    foreach (['src', 'assets', 'img', 'vendor', 'tests'] as $name) {
+        mkdir($checkout.'/'.$name);
+    }
+    mkdir($checkout.'/target/previous', 0755, true);
+    file_put_contents($checkout.'/target/previous/SHA256SUMS', 'previous');
+    symlink('previous', $checkout.'/target/packages');
+    $bin = $checkout.'/bin';
+    mkdir($bin);
+    file_put_contents($bin.'/docker', <<<'PHP'
+#!/usr/bin/env php
+<?php
+$stage = '';
+$output = '';
+foreach ($argv as $index => $argument) {
+    if ($argument === '--volume' && str_ends_with($argv[$index + 1], ':/output')) {
+        $output = substr($argv[$index + 1], 0, -strlen(':/output'));
+    }
+    if (str_starts_with($argument, 'RASPIBOARD_BUILD_STAGE=')) {
+        $stage = substr($argument, strlen('RASPIBOARD_BUILD_STAGE='));
+    }
+}
+file_put_contents(getenv('PACKAGING_TEST_ENGINE_LOG'), json_encode(array_slice($argv, 1))."\n", FILE_APPEND);
+if ($stage === 'build') {
+    file_put_contents($output.'/build-info.json', '{"version":"0.3.0","format":"all"}');
+    file_put_contents($output.'/source/snapshot-marker', 'original');
+} elseif ($stage === 'test' || $stage === 'package') {
+    if (file_get_contents($output.'/source/snapshot-marker') !== 'original') exit(32);
+    if ($stage === 'test' && getenv('PACKAGING_TEST_FAIL_TESTS')) exit(75);
+    if ($stage === 'package') {
+        foreach (['raspiboard_0.3.0-1_amd64.deb', 'Raspiboard-0.3.0-x86_64.AppImage', 'SHA256SUMS'] as $file) {
+            file_put_contents($output.'/artifacts/'.$file, getenv('PACKAGING_TEST_FAIL_PACKAGE') ? 'failed retry' : 'new');
+        }
+        if (getenv('PACKAGING_TEST_FAIL_PACKAGE')) exit(76);
+    }
+}
+PHP
+    );
+    chmod($bin.'/docker', 0755);
+    $log = $checkout.'/engine.jsonl';
+    $environment = [...getenv(), 'PATH' => $bin.':'.getenv('PATH'), 'PACKAGING_TEST_ENGINE_LOG' => $log];
+    foreach (['build', 'test', 'package'] as $stage) {
+        [$status, $output] = command([PHP_BINARY, $checkout.'/scripts/package-linux', '--engine', 'docker', '--image', 'tooling:test', '--jobs', '7', '--stage', $stage, '--json'], $environment);
+        $result = json_decode($output, true, flags: JSON_THROW_ON_ERROR);
+        check($status === 0 && $result['status'] === 'ok', $output);
+        clearstatcache(true);
+        check(file_get_contents($checkout.'/target/packages/SHA256SUMS') === ($stage === 'package' ? 'new' : 'previous'), 'Stage published downloads too soon');
+        if ($stage === 'build') {
+            check($result['directory'] === $checkout.'/target/packaging/staged', 'Missing reusable build directory');
+            file_put_contents($checkout.'/src/new-source', 'Must not replace the original snapshot');
+            [$failed, $failure] = command([PHP_BINARY, $checkout.'/scripts/package-linux', '--engine', 'docker', '--image', 'tooling:test', '--stage', 'test', '--json'], [...$environment, 'PACKAGING_TEST_FAIL_TESTS' => '1']);
+            check($failed === 75 && file_get_contents($checkout.'/target/packages/SHA256SUMS') === 'previous', $failure);
+        }
+    }
+    $calls = array_map(static fn ($line) => json_decode($line, true), file($log, FILE_IGNORE_NEW_LINES));
+    $stageCalls = array_values(array_filter($calls, static fn ($args) => in_array('/source/packaging/linux/build.php', $args, true)));
+    check(count($stageCalls) === 4, 'Each stage should use one container, including the failed test');
+    foreach ([$stageCalls[0], $stageCalls[2], $stageCalls[3]] as $args) {
+        foreach (['CARGO_BUILD_JOBS=7', 'RUST_TEST_THREADS=7', 'RAYON_NUM_THREADS=7'] as $setting) {
+            check(in_array($setting, $args, true), 'Parallelism was not passed to the container: '.$setting);
+        }
+    }
+    [$status, $output] = command([PHP_BINARY, $checkout.'/scripts/package-linux', '--engine', 'docker', '--image', 'tooling:test', '--stage', 'package', '--json'], [...$environment, 'PACKAGING_TEST_FAIL_PACKAGE' => '1']);
+    clearstatcache(true);
+    check($status === 76, $output);
+    check(file_get_contents($checkout.'/target/packages/SHA256SUMS') === 'new', 'Failed package retry changed published downloads');
+};
 
 $tests['concurrent builds cannot share the compilation cache'] = function () use ($root, $workspace): void {
     $checkout = $workspace.'/locked checkout';

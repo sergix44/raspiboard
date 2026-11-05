@@ -138,12 +138,17 @@ dependency. Building it requires CMake and the C toolchain listed above.
 
 ## Checks
 
-The GitHub workflow uses one build/test/package job. The packaging command runs
-the full application test suite with `cargo test --release --locked --target
-x86_64-unknown-linux-gnu`, formatting, Clippy, and PHP packaging checks once,
-then generates both formats from the same release executable. Debian 13 and
-Ubuntu 26.04 package validation must pass before upload. Cargo downloads and
-compiled outputs, plus Docker tooling layers, are cached between runs.
+The GitHub workflow uses four dependent jobs: build, application tests,
+packaging, and draft release update. The build job compiles the release app and
+test executables, checks formatting and Clippy, and archives the prepared outputs.
+The test job restores the exact Cargo cache and source paths, then runs
+`cargo test --release --locked --offline --target x86_64-unknown-linux-gnu` and
+PHP packaging checks. The packaging job uses the prepared executable for both
+formats without compiling it again. Debian 13 and Ubuntu 26.04 validation must
+pass before upload. The final job updates a draft on `master` only. Each job
+uses all runner CPU cores; local packaging still defaults to two jobs. See
+[Linux packaging](packaging.md#automated-builds-on-github) for artifact and cache
+sharing, staged commands, and release publication.
 
 ```sh
 cargo fmt --check

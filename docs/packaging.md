@@ -20,33 +20,78 @@ in the build container. PHP is required for building packages, not running them.
 
 The **ci** workflow runs on every push to `master`, including
 merged pull requests. It can also be started manually from the repository's
-[Actions tab](https://github.com/sergix44/raspiboard/actions/workflows/package-linux.yml)
+[Actions tab](https://github.com/sergix44/raspiboard/actions/workflows/build.yml)
 using **Run workflow**.
 
-The **build-test-package** job builds both formats from one release executable
-using `--format all`. It runs the full release test suite once, including library,
-binary, integration, and documentation tests, plus formatting, Clippy, and the PHP
-packaging checks. Tests are headless; no GUI or audio server is started. Both
-packages must pass structural checks and Debian 13 / Ubuntu 26.04 compatibility
-checks before either is uploaded. The compiler and native dependencies come from
-the pinned Debian 13 tooling container.
+The jobs run in this order: **build → app-unit-tests → packaging →
+update-draft-release**. A failure blocks every later job. Manual runs on other
+branches stop after packaging; the draft job runs only on `master`.
 
-Docker Buildx restores and saves the tooling container's layers through the
-GitHub Actions cache, then loads the image for the packaging command's `--image`
-option. A separate Cargo cache retains source downloads and compiled outputs.
-Its key includes runner architecture, tooling inputs, Cargo inputs, and the
-commit; restore prefixes reuse compatible earlier builds when source or
-dependencies change. Cargo still checks fingerprints before reusing outputs.
-Release optimizations and the two-job compilation limit apply to every build.
+- **build** checks formatting and Clippy, compiles the release application and
+  test executables, and prepares icons, notices, and the stripped package binary.
+- **app-unit-tests** restores that build and runs the full release test suite,
+  including library, binary, integration, and documentation tests, plus the PHP
+  packaging checks. Tests are headless; no GUI or audio server is started.
+- **packaging** reuses the prepared executable for both formats with no application
+  compilation or test rerun. Both packages must pass structural checks and Debian
+  13 / Ubuntu 26.04 compatibility checks before either is uploaded.
+- **update-draft-release** downloads and verifies the packages, then refreshes the
+  version's draft as described below. Only this job has repository write access.
+
+Every build, test, and packaging job sets its parallelism to `nproc`, using all
+CPU cores available to that runner for Cargo compilation, Rust test threads,
+package asset processing, and AppImage compression. Debian XZ compression also
+uses the CPUs available inside the container. Tar archive compression also uses
+all available cores. This does not change release optimization settings.
+
+Docker Buildx restores the pinned Debian 13 tooling image's layers through the
+GitHub Actions cache. The build job saves layers; later jobs reuse them through
+the shared `packaging-tooling` action. A separate Cargo cache retains source
+downloads and compiler outputs between workflow runs. Its key includes runner
+architecture, tooling inputs, Cargo inputs, and the commit; restore prefixes
+reuse compatible earlier builds. Cargo still checks fingerprints.
+
+Required outputs between jobs use artifacts from the same workflow run, so a
+cache miss cannot select an older executable. `linux-build.tar.zst` contains the
+prepared source snapshot, package assets, and Cargo registry sources.
+`linux-test-cache.tar.zst` contains compiler outputs and is downloaded only by
+the test job. Tar preserves timestamps, file permissions, and symlinks; containers
+use the same `/output/work` and `/cache` paths across jobs so Cargo can reuse its
+precompiled test executables. These intermediate artifacts are kept for one day;
+rerunning a job after they expire requires a new full workflow run. Archive
+transfer time is part of the build/test job duration.
 
 Open a successful run to download the `.deb`, AppImage, and shared `SHA256SUMS`
 file directly, without ZIP wrappers. Put all three in the same directory and run
 `sha256sum --check SHA256SUMS`. Run `chmod +x` on the AppImage before launching it.
 
-Packages are retained for 14 days. Build logs are uploaded separately for 7 days,
-including failed builds. The first run after a cache reset rebuilds the tooling
-and dependencies; later runs can reuse them. These workflow downloads are not
-GitHub Releases.
+Package artifacts are retained for 14 days. Build logs are uploaded separately
+for 7 days, including failed builds. The first run after a cache reset rebuilds
+the tooling and dependencies; later runs can reuse them.
+
+### Draft releases
+
+After the packaging job and artifact uploads succeed on `master`, the release job
+creates or updates a draft on the repository's
+[Releases page](https://github.com/sergix44/raspiboard/releases). Its tag comes
+from `Cargo.toml`, for example `v0.3.0`. Each successful build replaces the draft's
+`.deb`, AppImage, and `SHA256SUMS`, and updates its target to the exact built
+commit. Existing release titles and notes are preserved when refreshing a draft.
+Manually dispatched builds on other branches upload workflow artifacts only.
+
+To release, wait for a successful `master` run, open the draft, review its notes
+and packages, and click **Publish release**. No rebuild or separate tag push is
+needed. The version tag is created when publishing; do not create it beforehand,
+because an existing tag would prevent the draft from following new builds.
+Draft updates fail if the version already has a Git tag but no published release.
+Drafts are visible only to repository contributors with push access.
+
+Published releases are never changed by the workflow. Once a version is
+published, builds of that same version keep uploading workflow artifacts and
+skip the release update. Bump the package version in `Cargo.toml` and its entry
+in `Cargo.lock` to start the next draft. Builds queue behind an active run so a
+new push cannot cancel a draft's asset upload halfway through. Check the final
+workflow result before publishing; a failed upload can leave an incomplete draft.
 
 ## Local build options
 
@@ -78,6 +123,23 @@ Normal output reports progress and the build log path. `--plain` works without
 terminal formatting. `--json` writes one result object with `status`, output
 directory and files, or the failed stage and log path; subprocess output stays
 in the log. A nonzero exit status means the build or a required check failed.
+
+For workflows that need separate stages, use the same checkout layout:
+
+```sh
+./scripts/package-linux --stage build --jobs "$(nproc)"
+./scripts/package-linux --stage test --jobs "$(nproc)"
+./scripts/package-linux --stage package --jobs "$(nproc)"
+```
+
+`build` creates `target/packaging/staged/` and refuses to overwrite an existing
+staged build. Start it in a clean checkout. `test` and `package` require that
+successful build and reuse its source snapshot. Use the same `--format` in all
+stages. When moving between machines, transfer the staged directory and Cargo
+registry to both consumers, and the Cargo target directory to the test consumer.
+Build/test stages leave `target/packages` untouched. Each package attempt uses
+a fresh run directory; only a successful package stage updates the downloads.
+Run all stages in order: the `package` stage itself does not run tests. The default `--stage all` performs the full local flow below.
 
 The command performs these steps:
 

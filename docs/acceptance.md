@@ -7,6 +7,45 @@ project directory in a graphical desktop session:
 cargo run --locked
 ```
 
+## Website
+
+Use the [local preview commands](website.md#local-preview), then open
+`http://127.0.0.1:8080/raspiboard/` in your browser.
+
+1. At desktop, tablet, and 320-pixel phone widths, expect readable content,
+   wrapping navigation, and no page-wide horizontal scrollbar. The board is
+   labeled **Interface preview · example sounds** and does not play audio. Expect
+   six columns of plain raised pads, search, colored window controls, Play/Stop/
+   Record, volume sliders, input/output selectors, and Settings. Pad names must
+   be generic examples. The preview should remain proportional on narrow screens.
+2. Follow Features and Get Raspiboard. Expect the correct page sections. Follow
+   the user guide; expect the styled site page at `guide.html`. GitHub, package,
+   development-build, and packaging-guide links should open their corresponding
+   repository destinations. Before a first public release, the package links
+   should still open the Releases list.
+3. Tab through the page. Expect a visible Skip to content link first, visible
+   focus on every link/button, and no keyboard stops on decorative board pads.
+4. Expand each package's installation instructions, then copy each command and
+   paste it into a text editor. Expect the
+   exact displayed command and an announced success message. If clipboard access
+   is blocked, expect instructions to copy manually rather than a success claim.
+5. Disable JavaScript and reload. Expect all content, navigation, package links,
+   and expandable, selectable commands to remain available, with copy buttons
+   hidden. Expand **Requirements & installation notes** to check system and
+   checksum instructions.
+6. Enable reduced motion in your system or browser. Expect instant anchor
+   scrolling and no animated button movement. Check the browser console for
+   errors and confirm the logo, stylesheet, and script load under `/raspiboard/`.
+7. After publishing through the Pages workflow, repeat navigation and asset
+   checks at the workflow's reported URL. Expect only the static website to be
+   published and the desktop packaging workflow to remain independent.
+8. On the user guide, follow all ten section links and return to the homepage
+   using the logo. Expect the active **User guide** navigation link, readable
+   article text, a sticky section list on desktop, and a section list above the
+   article on phones. The pad settings table should scroll within its own region
+   on narrow screens. Keyboard navigation and section links must also work with
+   JavaScript disabled. Packaging and saved-data references should open GitHub.
+
 ## Linux packages
 
 For GitHub Actions, open a successful **ci** run and expect **build →

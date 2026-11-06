@@ -284,6 +284,6 @@ jobs:
           else
             gh release create "$tag" target/packages/*.deb target/packages/*.AppImage \
               target/packages/SHA256SUMS --draft --target "$GITHUB_SHA" \
-              --title "Raspiboard $tag" \
+              --title "$tag" \
               --notes "Linux x86-64 packages for Debian 13+ and Ubuntu 26.04+. Download the .deb or AppImage and SHA256SUMS to verify your download."
           fi
